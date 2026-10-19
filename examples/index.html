@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Gym Motion Studio</title>
+<script type="importmap">
+{ "imports": {
+  "three": "/node_modules/three/build/three.module.js",
+  "three/examples/jsm/": "/node_modules/three/examples/jsm/"
+} }
+</script>
+<style>
+  :root { --bg: #0A1119; --panel: #111A25; --ink: #E8EDF5; --muted: #8A97AB; --accent: #C3E201; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 20px; margin: 0 0 12px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+  select, button { background: var(--panel); color: var(--ink); border: 1px solid #243042; border-radius: 999px; padding: 8px 14px; font: inherit; min-height: 40px; }
+  button[aria-pressed="true"] { background: var(--accent); color: #0A1119; border-color: var(--accent); }
+  #stage { position: relative; aspect-ratio: 16 / 10; border-radius: 16px; overflow: hidden; background: var(--bg); }
+  .tag { position: absolute; padding: 4px 12px; border-radius: 999px; background: #0A1119b3; font-size: 13px; pointer-events: none; }
+  #cue { top: 12px; left: 12px; color: var(--accent); text-transform: uppercase; letter-spacing: .05em; font-weight: 700; }
+  #device { bottom: 12px; left: 12px; }
+  #tempo { top: 12px; right: 12px; color: var(--muted); }
+  label { color: var(--muted); display: inline-flex; gap: 6px; align-items: center; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Gym Motion Studio</h1>
+  <div class="bar">
+    <select id="pick" aria-label="Exercise"></select>
+    <label><input type="checkbox" id="machines" checked /> Machines only</label>
+  </div>
+  <div id="stage">
+    <p id="cue" class="tag" aria-live="polite"></p>
+    <p id="device" class="tag"></p>
+    <p id="tempo" class="tag"></p>
+  </div>
+  <div class="bar">
+    <button id="play" aria-pressed="true">Pause</button>
+    <button id="speed">1×</button>
+    <span style="flex:1"></span>
+    <button data-view="front">Front</button>
+    <button data-view="angle" aria-pressed="true">3/4</button>
+    <button data-view="side">Side</button>
+  </div>
+</main>
+<script type="module">
+  import { DEVICE, EXERCISE_IDS, MOTIONS } from "../dist/index.js";
+  import { GymViewer } from "../dist/three/index.js";
+
+  const $ = (id) => document.getElementById(id);
+  const stage = $("stage");
+  const nice = (id) => id.replace(/^e-/, "").replace(/-/g, " ");
+  const viewer = new GymViewer(stage, { spec: MOTIONS[new URLSearchParams(location.search).get("id") ?? "e-legpress"], onCue: (c) => ($("cue").textContent = c) });
+  stage.prepend(viewer.canvas);
+  window.viewer = viewer;
+
+  function fill() {
+    const only = $("machines").checked;
+    const ids = EXERCISE_IDS.filter((id) => !only || DEVICE[id]);
+    $("pick").innerHTML = ids.map((id) => `<option value="${id}">${DEVICE[id] ? `${DEVICE[id]} — ` : ""}${nice(id)}</option>`).join("");
+    $("pick").value = ids.includes(current) ? current : ids[0];
+  }
+  let current = new URLSearchParams(location.search).get("id") ?? "e-legpress";
+  function show(id) {
+    current = id;
+    viewer.setContent({ spec: { ...MOTIONS[id], device: DEVICE[id] }, label: `Animated 3D guide: ${nice(id)}` });
+    $("device").textContent = DEVICE[id] ?? "";
+    $("device").hidden = !DEVICE[id];
+    const r = viewer.repSeconds;
+    $("tempo").textContent = r ? `${r.toFixed(1)}s / rep` : "";
+    $("tempo").hidden = !r;
+    history.replaceState(null, "", `?id=${id}`);
+  }
+  $("machines").onchange = () => { fill(); show($("pick").value); };
+  $("pick").onchange = (e) => show(e.target.value);
+  $("play").onclick = (e) => {
+    const on = viewer.toggle();
+    e.target.textContent = on ? "Pause" : "Play";
+    e.target.setAttribute("aria-pressed", on);
+  };
+  $("speed").onclick = (e) => {
+    const half = e.target.textContent === "1×";
+    viewer.setSpeed(half ? 0.5 : 1);
+    e.target.textContent = half ? "½×" : "1×";
+  };
+  for (const b of document.querySelectorAll("[data-view]"))
+    b.onclick = () => {
+      viewer.setView(b.dataset.view);
+      for (const o of document.querySelectorAll("[data-view]")) o.setAttribute("aria-pressed", o === b);
+    };
+  fill();
+  show(current);
+</script>
+</body>
+</html>

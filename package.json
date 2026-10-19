@@ -1,0 +1,99 @@
+{
+  "name": "pixelwizards-gym-motion",
+  "version": "0.1.0",
+  "description": "3D gym exercise animations from plain data: an anatomical body simulator with IK, muscle highlighting and gym machines (leg press, lat pulldown, cable stack, Smith machine…) for 114 exercises. Core has zero dependencies; three.js renderer and React component optional.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamedafzali/PixelWizardsGymMotion.git"
+  },
+  "homepage": "https://github.com/hamedafzali/PixelWizardsGymMotion#readme",
+  "bugs": {
+    "url": "https://github.com/hamedafzali/PixelWizardsGymMotion/issues"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./three": {
+      "types": "./dist/three/index.d.ts",
+      "default": "./dist/three/index.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "default": "./dist/react.js"
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "three": [
+        "./dist/three/index.d.ts"
+      ],
+      "react": [
+        "./dist/react.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "dev": "tsc --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build && node --test \"test/*.test.mjs\"",
+    "demo": "npm run build && node scripts/serve.mjs",
+    "prepublishOnly": "npm test"
+  },
+  "keywords": [
+    "gym",
+    "workout",
+    "exercise",
+    "fitness",
+    "strength-training",
+    "bodybuilding",
+    "body",
+    "body-simulator",
+    "human-body",
+    "anatomy",
+    "muscle",
+    "muscles",
+    "3d",
+    "threejs",
+    "webgl",
+    "animation",
+    "inverse-kinematics",
+    "exercise-animation",
+    "gym-machine",
+    "react",
+    "typescript"
+  ],
+  "license": "MIT",
+  "author": "hamed.afzali <afzali.hamed@gmail.com>",
+  "peerDependencies": {
+    "react": ">=18",
+    "three": ">=0.160.0"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    },
+    "three": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/three": "^0.170.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.170.0",
+    "typescript": "^5.6.3"
+  }
+}

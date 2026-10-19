@@ -22,7 +22,8 @@ const cues = (p: Params, d: [string, string]): [string, string] => {
 function sweep(n: number, at: (t: number) => Pose): Pose[] {
   return Array.from({ length: n }, (_, i) => at(i / (n - 1)));
 }
-const ease = (t: number) => 0.5 - Math.cos(Math.PI * t) / 2;
+/** Minimum-jerk profile: the smoothest start and stop, as people move a load. */
+const ease = (t: number) => t * t * t * (10 - 15 * t + 6 * t * t);
 const pair = (f: (i: 0 | 1, s: number) => V3): [V3, V3] => [f(0, 1), f(1, -1)];
 
 // ── Shared body helpers ────────────────────────────────────────────────────

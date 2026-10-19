@@ -76,3 +76,52 @@ describe("movement engine", () => {
     assert.equal(sample(loop, 0.4).load, 0);
   });
 });
+
+describe("timeline", () => {
+  const rep = resolveMotion(MOTIONS["e-squat"]).motion;
+  const [a, h1] = rep.tempo ?? [1.2, 0.3, 1.8, 0.3];
+  const at = (t, alive = false) => sample(rep, t, undefined, { alive }).pose;
+
+  it("passes through every key", () => {
+    const n = rep.keys.length;
+    for (let i = 0; i < n; i++) {
+      const p = at((a * i) / (n - 1));
+      assert.ok(dist(p.pelvis, rep.keys[i].pelvis) < 1e-9, `key ${i}`);
+    }
+  });
+
+  it("glides through keys without a velocity jump", () => {
+    const n = rep.keys.length;
+    const h = 1e-4;
+    for (let i = 1; i < n - 1; i++) {
+      const t = (a * i) / (n - 1);
+      const vin = dist(at(t).pelvis, at(t - h).pelvis) / h;
+      const vout = dist(at(t + h).pelvis, at(t).pelvis) / h;
+      assert.ok(Math.abs(vin - vout) < 0.02 * Math.max(vin, vout, 0.1), `key ${i}: ${vin} vs ${vout}`);
+    }
+  });
+
+  it("arrives at the turnaround at rest", () => {
+    const v = dist(at(a).pelvis, at(a - 1e-3).pelvis) / 1e-3;
+    assert.ok(v < 0.01, `${v} m/s`);
+  });
+
+  it("breathes in holds, and stays put without it", () => {
+    const [t0, t1] = [a + h1 * 0.1, a + h1 * 0.9];
+    assert.notDeepEqual(at(t0, true).torso, at(t1, true).torso);
+    assert.deepEqual(at(t0).torso, at(t1).torso);
+  });
+
+  for (const id of EXERCISE_IDS) {
+    it(`${id} stays clear of the floor between keys`, () => {
+      const { motion } = resolveMotion(MOTIONS[id]);
+      for (let t = 0; t < 6; t += 0.05) {
+        const sk = solve(sample(motion, t).pose);
+        assert.ok(Math.min(sk.ankle[0][1], sk.ankle[1][1], sk.pelvis[1]) > 0.02, `t=${t.toFixed(2)}`);
+        // The burpee drops from standing to the floor over only a few keys, so
+        // its hands trail their targets on the way down; the rest must track.
+        if (id !== "e-burpee") assert.ok(reachError(sample(motion, t).pose) < 0.06, `reach at t=${t.toFixed(2)}`);
+      }
+    });
+  }
+});

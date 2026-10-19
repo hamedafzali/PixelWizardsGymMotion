@@ -4,6 +4,7 @@
 
 export * from "./types.js";
 export { MUSCLES, highlightFor, type Highlight, type Level } from "./muscles.js";
+export { musclesFor, type Targets } from "./targets.js";
 export { MOTIONS, MACHINE, DEVICE, EXERCISE_IDS, motionSpecFor, resolveMotion } from "./catalog.js";
 export { buildMotion, PATTERN_IDS } from "./patterns.js";
 export { solve, anchorPoint, BODY, frameOf, type Skeleton } from "./rig.js";

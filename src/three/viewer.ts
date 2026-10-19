@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { motionSpecFor } from "../catalog.js";
 import { highlightFor, type Highlight } from "../muscles.js";
+import { musclesFor } from "../targets.js";
 import { Spring } from "../spring.js";
 import type { Frame } from "../timeline.js";
 import type { ExerciseInput, MotionSpec } from "../types.js";
@@ -111,7 +112,8 @@ export class GymViewer {
   setContent({ exercise, spec, highlight, label }: Pick<GymViewerOptions, "exercise" | "spec" | "highlight" | "label">): void {
     const s = spec ?? (exercise ? motionSpecFor(exercise) : this.scene?.spec);
     if (!s) throw new Error("GymViewer: pass an `exercise` or a `spec`.");
-    const h = highlight ?? (exercise ? highlightFor(exercise.primaryMuscle, exercise.secondaryMuscles) : {});
+    const t = exercise?.primaryMuscle ? { primary: exercise.primaryMuscle, secondary: exercise.secondaryMuscles ?? [] } : musclesFor(s);
+    const h = highlight ?? highlightFor(t.primary, t.secondary);
     this.scene?.dispose();
     this.scene = new GymScene({ spec: s, highlight: h });
     this.three.add(this.scene.root);

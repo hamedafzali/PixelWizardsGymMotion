@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BODY, DEVICE, EXERCISE_IDS, MACHINE, MOTIONS, motionSpecFor, resolveMotion, sample, solve } from "../dist/index.js";
+import { BODY, DEVICE, EXERCISE_IDS, MACHINE, MOTIONS, MUSCLES, motionSpecFor, musclesFor, resolveMotion, sample, solve } from "../dist/index.js";
 
 const finite = (v) => v.every(Number.isFinite);
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -124,4 +124,27 @@ describe("timeline", () => {
       }
     });
   }
+});
+
+describe("muscle targets", () => {
+  it("names a known primary muscle for every motion", () => {
+    for (const id of EXERCISE_IDS) {
+      const t = musclesFor(MOTIONS[id]);
+      assert.ok(MUSCLES.includes(t.primary), id);
+      for (const m of t.secondary) assert.ok(MUSCLES.includes(m), `${id}: ${m}`);
+    }
+  });
+
+  it("tells similar patterns apart by their parameters", () => {
+    const p = (id) => musclesFor(MOTIONS[id]).primary;
+    assert.equal(p("e-curl"), "biceps");
+    assert.equal(p("e-pushdown"), "triceps");
+    assert.equal(p("e-skullcrusher"), "triceps");
+    assert.equal(p("e-pecdeck"), "chest");
+    assert.equal(p("e-reversefly"), "rear delts");
+    assert.equal(p("e-lateral"), "shoulders");
+    assert.equal(p("e-straightpd"), "lats");
+    assert.equal(p("e-adduct"), "adductors");
+    assert.equal(p("e-abduct"), "abductors");
+  });
 });

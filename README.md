@@ -58,6 +58,15 @@ const frame = sample(motion, 1.4);   // { pose, cue, working, phase, load }
 const skeleton = solve(frame.pose);  // joint positions in metres, Y up, facing +Z
 ```
 
+`sample` moves through the key poses on a spline, with a minimum-jerk speed
+profile. On top of that it adds breathing and a slight sway: the figure
+breathes out through the working half and never freezes in a hold. Pass
+`{ alive: false }` as the fourth argument to get the bare keys.
+
+`musclesFor(spec)` returns the muscles a movement works, as
+`{ primary, secondary }`. The viewer uses it to highlight muscles when you
+give it a spec without an exercise.
+
 ## Exercises it does not know
 
 `motionSpecFor` takes any `{ id, name, equipment?, primaryMuscle? }`:

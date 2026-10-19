@@ -10,12 +10,16 @@ import { BONE_COUNT, boneFrames, buildBody, HELPERS, MAIN_BONES, PAINT_COUNT, PA
 export type { Highlight };
 
 export const SKIN = {
-  skin: "#A9B0C4",
+  skin: "#C9A08A",
   shorts: "#262C4A",
   shoe: "#323A63",
   sole: "#E9ECF5",
   sock: "#DDE2EE",
-  hair: "#20263F",
+  hair: "#2A211C",
+  eye: "#E9E5E0",
+  iris: "#3A2A1F",
+  lips: "#A9776F",
+  brow: "#2A211C",
   primary: "#CDF542",
   secondary: "#86A23A",
 };
@@ -29,7 +33,7 @@ function skinMaterial(pulse: { value: number }) {
     metalness: 0,
     sheen: 0.25,
     sheenRoughness: 0.5,
-    sheenColor: new THREE.Color("#E8ECFF"),
+    sheenColor: new THREE.Color("#FFE9DC"),
     clearcoat: 0.06,
     clearcoatRoughness: 0.5,
   });

@@ -1,4 +1,8 @@
 import * as THREE from "three";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/examples/jsm/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { motionSpecFor } from "../catalog.js";
 import { highlightFor, type Highlight } from "../muscles.js";
 import { musclesFor } from "../targets.js";
@@ -35,6 +39,13 @@ export interface GymViewerOptions {
   /** Drag sideways to turn the camera. Default true. */
   interactive?: boolean;
   shadows?: boolean;
+  /**
+   * "high" adds ambient occlusion and multisampled post-processing, so
+   * contact areas (armpits, under the bench, between plates) darken the way
+   * they do under studio light. "standard" renders straight to the canvas,
+   * cheaper on low-end phones. Default "high".
+   */
+  quality?: "high" | "standard";
   /** Upper bound for devicePixelRatio. Default 2. */
   maxPixelRatio?: number;
   /** Accessible description of the canvas. */
@@ -73,6 +84,8 @@ export class GymViewer {
   private cleanups: (() => void)[] = [];
   private key!: THREE.DirectionalLight;
   private fog!: THREE.Fog;
+  private composer: EffectComposer | null = null;
+  private ao: GTAOPass | null = null;
 
   constructor(
     readonly container: HTMLElement,
@@ -94,9 +107,11 @@ export class GymViewer {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.15;
     this.renderer.shadowMap.enabled = options.shadows ?? true;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Plain PCF honours shadow.radius, so shadows get a soft penumbra.
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.lights();
+    if ((options.quality ?? "high") === "high") this.postProcessing();
     this.setContent(options);
     if (reduce && options.playing === undefined) this.scene.seek(this.scene.peakTime);
 
@@ -172,6 +187,10 @@ export class GymViewer {
     const h = Math.max(1, this.container.clientHeight);
     this.renderer.setPixelRatio(Math.min(globalThis.devicePixelRatio || 1, this.opts.maxPixelRatio ?? 2));
     this.renderer.setSize(w, h, false);
+    if (this.composer) {
+      this.composer.setPixelRatio(this.renderer.getPixelRatio());
+      this.composer.setSize(w, h);
+    }
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.wake();
@@ -180,13 +199,16 @@ export class GymViewer {
   /** Draw one frame now, whether or not the loop is running. */
   render(): void {
     this.placeCamera();
-    this.renderer.render(this.three, this.camera);
+    if (this.composer) this.composer.render();
+    else this.renderer.render(this.three, this.camera);
   }
 
   dispose(): void {
     cancelAnimationFrame(this.raf);
     for (const c of this.cleanups) c();
     this.scene.dispose();
+    this.ao?.dispose();
+    this.composer?.dispose();
     this.three.environment?.dispose();
     this.renderer.dispose();
     this.canvas.remove();
@@ -201,7 +223,8 @@ export class GymViewer {
     const key = new THREE.DirectionalLight("#ffffff", 2.1);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
-    key.shadow.radius = 5;
+    key.shadow.radius = 4;
+    key.shadow.blurSamples = 16;
     key.shadow.bias = -0.0003;
     key.shadow.normalBias = 0.01;
     this.key = key;
@@ -219,7 +242,9 @@ export class GymViewer {
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     s.add(floor);
-    this.fog = new THREE.Fog(bg, 4, 10);
+    // Fog is tone mapped like every lit surface; pre-invert the curve so the
+    // floor fades into exactly the requested background colour.
+    this.fog = new THREE.Fog(untoneMapped(new THREE.Color(bg), this.renderer.toneMappingExposure), 4, 10);
     s.fog = this.fog;
     this.cleanups.push(() => {
       tex.dispose();
@@ -240,6 +265,27 @@ export class GymViewer {
       }
     });
     pmrem.dispose();
+  }
+
+  /**
+   * Scene → multisampled half-float target → ground-truth ambient occlusion
+   * (GTAO, denoised) → tone mapping and sRGB output.
+   */
+  private postProcessing() {
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    const composer = new EffectComposer(this.renderer, target);
+    composer.addPass(new RenderPass(this.three, this.camera));
+    const ao = new GTAOPass(this.three, this.camera, 1, 1);
+    ao.updateGtaoMaterial({ radius: 0.18, distanceExponent: 1.6, thickness: 1.2, scale: 1.1, samples: 16 });
+    ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
+    ao.blendIntensity = 0.9;
+    composer.addPass(ao);
+    composer.addPass(new OutputPass());
+    // Through the composer the clear colour would be encoded twice; draw the
+    // background as a scene colour, tone mapped along with the fog.
+    this.three.background = this.fog.color.clone();
+    this.composer = composer;
+    this.ao = ao;
   }
 
   /** Keeps the key light's shadow tight around the exercise. */
@@ -373,4 +419,29 @@ function studioScene() {
   panel(1, 4, [5.5, 2.6, -3.5], 4, "#C4CEFF"); // cool rim strip
   panel(6, 1.2, [0, 1.2, -6.8], 0.8); // faint back wall bounce
   return scene;
+}
+
+// ACES filmic as three.js applies it (exposure / 0.6, input matrix, RRT+ODT
+// fit, output matrix), in linear RGB.
+function aces([r, g, b]: number[], exposure: number) {
+  const k = exposure / 0.6;
+  [r, g, b] = [r * k, g * k, b * k];
+  const i = [0.59719 * r + 0.35458 * g + 0.04823 * b, 0.076 * r + 0.90834 * g + 0.01566 * b, 0.0284 * r + 0.13383 * g + 0.83777 * b];
+  const f = i.map((v) => (v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.432951) + 0.238081));
+  return [
+    1.60475 * f[0] - 0.53108 * f[1] - 0.07367 * f[2],
+    -0.10208 * f[0] + 1.10813 * f[1] - 0.00605 * f[2],
+    -0.00327 * f[0] - 0.07276 * f[1] + 1.07602 * f[2],
+  ].map((v) => Math.min(1, Math.max(0, v)));
+}
+
+/** The linear colour that ACES maps onto `target`, found by fixed-point iteration. */
+function untoneMapped(target: THREE.Color, exposure: number) {
+  const t = [target.r, target.g, target.b];
+  let c = [...t];
+  for (let n = 0; n < 40; n++) {
+    const m = aces(c, exposure);
+    c = c.map((v, j) => Math.max(1e-6, v + (t[j] - m[j]) * 1.5));
+  }
+  return new THREE.Color(c[0], c[1], c[2]);
 }

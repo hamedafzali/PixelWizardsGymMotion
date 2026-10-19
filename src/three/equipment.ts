@@ -1,9 +1,10 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
+import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { anchorPoint, type Skeleton } from "../rig.js";
 import type { Part, V3 } from "../types.js";
 import { add, mid, mul, norm, rad, sub } from "../vec.js";
-import { surfaceMaps } from "./textures.js";
+import { labelTexture, repeated, surfaceMaps } from "./textures.js";
 
 // Gym equipment built from data. Every part is assembled once from a few
 // shapes (rounded steel tube, upholstered pad, chrome rod, rubber plate) and
@@ -69,6 +70,23 @@ function makeMaterials() {
     board: std(PALETTE.board, { roughness: 0.8 }),
     chrome: std(PALETTE.chrome, { metalness: 1, roughness: 0.14 }),
     plate: std(PALETTE.plate, { metalness: 0, roughness: 0.72, normalMap: maps.rubber, normalScale: n(0.25) }),
+    // Moulded rubber with a slight satin sheen (dumbbell heads, kettlebells).
+    rubber: new THREE.MeshPhysicalMaterial({
+      color: PALETTE.plate,
+      roughness: 0.58,
+      metalness: 0,
+      normalMap: repeated(maps.rubber, 8, 8),
+      normalScale: n(0.3),
+      clearcoat: 0.2,
+      clearcoatRoughness: 0.6,
+    }),
+    // Machined steel grip; knurledRod() scales UVs so one tile is KNURL_TILE metres.
+    knurl: std("#BFC5CE", { metalness: 1, roughness: 0.34, normalMap: maps.knurl, normalScale: n(1.1) }),
+    // Brushed steel: chrome with a softer highlight.
+    steel: std("#B7BDC7", { metalness: 1, roughness: 0.28 }),
+    // Painted cast iron (stack plates, kettlebells): satin black with a fine ripple.
+    stackPlate: std("#262A31", { metalness: 0.35, roughness: 0.5, normalMap: maps.powder, normalScale: n(0.12) }),
+    cast: std("#1F2228", { metalness: 0.3, roughness: 0.48, normalMap: maps.powder, normalScale: n(0.18) }),
     grip: std(PALETTE.grip, { roughness: 0.9, normalMap: maps.rubber, normalScale: n(0.4) }),
     cable: std(PALETTE.cable, { metalness: 0.3, roughness: 0.4 }),
     cap: std(PALETTE.cap, { roughness: 0.5 }),
@@ -91,6 +109,87 @@ function makeGeometries() {
   };
 }
 const G = () => (geos ??= makeGeometries());
+
+/** Physical size of one knurl tile (16 diamonds): about 2.5 mm pitch. */
+const KNURL_TILE = 0.04;
+const knurlGeos = new Map<string, THREE.BufferGeometry>();
+/** Knurled steel section along X, centred on the origin. */
+function knurledRod(len: number, r: number) {
+  const k = `${len.toFixed(3)}:${r.toFixed(4)}`;
+  let g = knurlGeos.get(k);
+  if (!g) {
+    g = new THREE.CylinderGeometry(r, r, len, 32, 1, true);
+    const uv = g.getAttribute("uv") as THREE.BufferAttribute;
+    const su = Math.round((Math.PI * 2 * r) / KNURL_TILE) || 1;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, (uv.getY(i) * len) / KNURL_TILE);
+    g.rotateZ(Math.PI / 2);
+    knurlGeos.set(k, g);
+  }
+  return mesh(g, M().knurl);
+}
+
+const decalMats = new Map<string, THREE.Material>();
+/** Painted weight numerals: a flat decal facing +Z, `w` metres wide. */
+function label(text: string, w: number, color = "#D6DBE3") {
+  const k = `${text}:${color}`;
+  let mat = decalMats.get(k);
+  if (!mat) {
+    mat = new THREE.MeshStandardMaterial({
+      map: labelTexture(text),
+      color,
+      roughness: 0.5,
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+    decalMats.set(k, mat);
+  }
+  const m = new THREE.Mesh(planeGeo(), mat);
+  m.scale.set(w, w, 1);
+  m.receiveShadow = true;
+  return m;
+}
+let plane: THREE.PlaneGeometry | null = null;
+const planeGeo = () => (plane ??= new THREE.PlaneGeometry(1, 1));
+
+const hexBevel = (r: number) => Math.min(0.009, r * 0.14);
+/** Distance from the axis to a flat of hexHeadGeo(r): the bevel pushes it out. */
+const hexFlat = (r: number) => (r - hexBevel(r)) * Math.cos(Math.PI / 6) + hexBevel(r);
+const hexGeos = new Map<string, THREE.BufferGeometry>();
+/**
+ * Moulded hex head along X: a hexagon (flats top and bottom) with rounded
+ * vertical edges, extruded with a rounded chamfer on both faces.
+ */
+function hexHeadGeo(r: number, len: number) {
+  const k = `${r.toFixed(3)}:${len.toFixed(3)}`;
+  let g = hexGeos.get(k);
+  if (!g) {
+    const b = hexBevel(r);
+    const corner = r * 0.16;
+    const pts = Array.from({ length: 6 }, (_, i) => new THREE.Vector2(Math.cos((i * Math.PI) / 3), Math.sin((i * Math.PI) / 3)).multiplyScalar(r - b));
+    const shape = new THREE.Shape();
+    pts.forEach((c, i) => {
+      const prev = pts[(i + 5) % 6];
+      const next = pts[(i + 1) % 6];
+      const a = c.clone().lerp(prev, corner / (r - b));
+      const z = c.clone().lerp(next, corner / (r - b));
+      if (i === 0) shape.moveTo(a.x, a.y);
+      else shape.lineTo(a.x, a.y);
+      shape.quadraticCurveTo(c.x, c.y, z.x, z.y);
+    });
+    shape.closePath();
+    const depth = len - 2 * b;
+    const e = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 4, curveSegments: 5 });
+    e.translate(0, 0, -depth / 2);
+    e.rotateY(Math.PI / 2);
+    // Smooth across the rounded edges and chamfers; the flats stay flat.
+    g = toCreasedNormals(e, rad(40));
+    e.dispose();
+    hexGeos.set(k, g);
+  }
+  return g;
+}
 
 const rounded = new Map<string, THREE.BufferGeometry>();
 /** Rounded box geometry, cached per size: steel tube and upholstery corners. */
@@ -201,6 +300,71 @@ const yawOf = (sk: Skeleton) => Math.atan2(sk.frame.fwd[0], sk.frame.fwd[2]);
 
 // ── Weight stack ───────────────────────────────────────────────────────────
 
+const stackGeos = new Map<string, THREE.BufferGeometry>();
+/**
+ * Cast stack plate: a rounded rectangle with bores for the two guide rods and
+ * the lift rod, edges broken by a small chamfer. Thickness along Y.
+ */
+function stackPlateGeo(w: number, t: number, d: number) {
+  const k = `${w}:${t}:${d}`;
+  let g = stackGeos.get(k);
+  if (!g) {
+    const b = 0.0025;
+    const hw = w / 2 - b;
+    const hd = d / 2 - b;
+    const c = 0.008;
+    const shape = new THREE.Shape();
+    shape.moveTo(-hw + c, -hd);
+    shape.lineTo(hw - c, -hd);
+    shape.quadraticCurveTo(hw, -hd, hw, -hd + c);
+    shape.lineTo(hw, hd - c);
+    shape.quadraticCurveTo(hw, hd, hw - c, hd);
+    shape.lineTo(-hw + c, hd);
+    shape.quadraticCurveTo(-hw, hd, -hw, hd - c);
+    shape.lineTo(-hw, -hd + c);
+    shape.quadraticCurveTo(-hw, -hd, -hw + c, -hd);
+    for (const [x, r] of [[-0.095, 0.011], [0.095, 0.011], [0, 0.014]] as const) {
+      const hole = new THREE.Path();
+      hole.absarc(x, 0, r, 0, Math.PI * 2, true);
+      shape.holes.push(hole);
+    }
+    const depth = t - 2 * b;
+    const e = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: b, bevelSize: b, bevelSegments: 2, curveSegments: 6 });
+    e.translate(0, 0, -depth / 2);
+    e.rotateX(-Math.PI / 2);
+    g = toCreasedNormals(e, rad(35));
+    e.dispose();
+    stackGeos.set(k, g);
+  }
+  return g;
+}
+
+const pulleyGeos = new Map<number, THREE.BufferGeometry>();
+/** Machined pulley sheave turned on a lathe: a V-groove rim, a thin web, a hub. Axis along Y. */
+function pulleyGeo(r: number) {
+  let g = pulleyGeos.get(r);
+  if (!g) {
+    const w = 0.013;
+    const prof: [number, number][] = [
+      [0.008, w * 0.95],
+      [0.017, w * 0.95],
+      [0.02, w * 0.4],
+      [r * 0.72, w * 0.32],
+      [r * 0.78, w * 0.7],
+      [r - 0.0015, w],
+      [r, w * 0.8],
+      [r - 0.004, w * 0.42],
+      [r - 0.0085, w * 0.16],
+    ];
+    const pts = [...prof, ...prof.map(([x, y]) => [x, -y] as [number, number]).reverse()].map(([x, y]) => new THREE.Vector2(x, y));
+    const l = new THREE.LatheGeometry(pts, 48);
+    g = toCreasedNormals(l, rad(30));
+    l.dispose();
+    pulleyGeos.set(r, g);
+  }
+  return g;
+}
+
 const PLATE_T = 0.032;
 const PLATE_GAP = 0.005;
 const PLATES = 12;
@@ -237,13 +401,21 @@ function weightStack(at: V3, height = 1.9, facing = turnTowardsOrigin(at[0], at[
   // Rubber bumpers the stack lands on.
   for (const s of [1, -1]) g.add(rod([s * 0.095, 0.06, 0], [s * 0.095, 0.1, 0], 0.02, m.grip));
 
-  const plateGeo = roundedGeo([w, PLATE_T, d], 0.006);
+  const plateGeo = stackPlateGeo(w, PLATE_T, d);
   const y0 = 0.1 + PLATE_T / 2;
   const moving = new THREE.Group();
   moving.name = "stack:lifted";
   for (let i = 0; i < PLATES; i++) {
-    const p = mesh(plateGeo, m.plate);
+    const p = mesh(plateGeo, m.stackPlate);
     p.position.y = y0 + i * (PLATE_T + PLATE_GAP);
+    // The selector-pin hole and the plate's running total, painted on the front.
+    const hole = mesh(G().disc, m.cap, false);
+    hole.rotation.x = Math.PI / 2;
+    hole.scale.set(0.0072, 0.001, 0.0072);
+    hole.position.set(0, 0, d / 2 + 0.0002);
+    const kg = label(String((PLATES - i) * 5), 0.026);
+    kg.position.set(w / 2 - 0.042, 0, d / 2 + 0.0004);
+    p.add(hole, kg);
     (i >= PLATES - PINNED ? moving : g).add(p);
   }
   const pinPlate = PLATES - PINNED;
@@ -256,7 +428,19 @@ function weightStack(at: V3, height = 1.9, facing = turnTowardsOrigin(at[0], at[
   knob.position.set(0, pin.position.y, d / 2 + 0.035);
   moving.add(pin, knob);
   const topY = y0 + PLATES * (PLATE_T + PLATE_GAP);
-  moving.add(rbox([0, topY, 0], [w, 0.018, d], m.chrome, 0, 0.005));
+  moving.add(rbox([0, topY, 0], [w, 0.018, d], m.frame, 0, 0.005));
+  // Bronze-lined bushings where the top plate rides the guide rods.
+  for (const s of [1, -1]) {
+    const bush = mesh(G().disc, m.steel);
+    bush.scale.set(0.017, 0.028, 0.017);
+    bush.position.set(s * 0.095, topY + 0.012, 0);
+    const lip = mesh(G().disc, m.chrome);
+    lip.scale.set(0.021, 0.004, 0.021);
+    lip.position.set(s * 0.095, topY + 0.026, 0);
+    moving.add(bush, lip);
+  }
+  // Clevis and bolt where the lift rod meets the top plate.
+  moving.add(rbox([0, topY + 0.024, 0], [0.04, 0.03, 0.03], m.steel, 0, 0.004), bolt([0.0, topY + 0.04, 0], 0.009));
   const rodLen = 0.7;
   moving.add(rod([0, topY, 0], [0, topY + rodLen, 0], 0.011, m.chrome));
   g.add(moving);
@@ -280,10 +464,9 @@ function weightStack(at: V3, height = 1.9, facing = turnTowardsOrigin(at[0], at[
 function pulley(r = 0.05) {
   const m = M();
   const g = new THREE.Group();
-  const wheel = mesh(G().disc, m.chrome);
-  wheel.scale.set(r, 0.026, r);
-  const cap = mesh(G().disc, m.frame);
-  cap.scale.set(r * 0.45, 0.034, r * 0.45);
+  const wheel = mesh(pulleyGeo(r), m.steel);
+  const cap = mesh(G().hex, m.chrome);
+  cap.scale.set(0.009, 0.05, 0.009);
   const housing = mesh(roundedGeo([0.05, r * 2.4, r * 2.4], 0.01), m.frame);
   housing.scale.set(1, 1, 1);
   const inner = group(wheel, cap);
@@ -343,11 +526,20 @@ function plateGeo(r: number, t: number) {
   return g;
 }
 
-/** Bumper plate with a chrome bore sleeve, axis along X. */
-function plateDisc(r: number, t: number) {
+/** Bumper plate with a chrome bore sleeve, axis along X, its weight moulded on both faces. */
+function plateDisc(r: number, t: number, kg: number) {
   const p = mesh(plateGeo(r, t), M().plate);
   p.rotation.z = Math.PI / 2;
-  return group(p, xRod(t + 0.004, 0.03, M().chrome, G().disc));
+  const g = group(p, xRod(t + 0.004, 0.03, M().chrome, G().disc));
+  for (const s of [1, -1]) {
+    for (const [y, size] of [[1, 0.24], [-1, 0.2]] as const) {
+      const l = label(String(kg), r * size, "#C9CED8");
+      l.position.set(s * ((t / 2) * 0.8 + 0.0004), y * r * 0.74, 0);
+      l.rotation.y = (s * Math.PI) / 2;
+      g.add(l);
+    }
+  }
+  return g;
 }
 
 function barbell(style: "straight" | "ez" | "trap", length: number, plates: boolean): Built {
@@ -364,24 +556,37 @@ function barbell(style: "straight" | "ez" | "trap", length: number, plates: bool
       g.add(rod([s * 0.27, 0, -0.1], [s * 0.27, 0, 0.1], 0.017, m.grip));
       g.add(rod([s * 0.36, 0, 0], [s * 0.95, 0, 0], 0.025, m.chrome));
       if (plates) {
-        const p = plateDisc(0.225, 0.06);
+        const p = plateDisc(0.225, 0.06, 20);
         p.position.x = s * 0.62;
         g.add(p);
       }
     }
   } else {
-    g.add(xRod(length, 0.014, m.chrome));
+    g.add(xRod(length, 0.014, m.steel));
     const big = length >= 1.8;
     const sleeve = big ? 0.42 : 0.2;
+    // Knurled grips: a smooth gap in the middle, smooth again by the collars.
+    const k0 = big ? 0.085 : 0.05;
+    const k1 = length / 2 - sleeve - (big ? 0.1 : 0.035);
+    if (big) g.add(knurledRod(0.15, 0.0142));
     for (const s of [1, -1]) {
-      const sl = xRod(sleeve, 0.025, m.chrome);
+      if (k1 > k0) {
+        const k = knurledRod(k1 - k0, 0.0142);
+        k.position.x = (s * (k0 + k1)) / 2;
+        g.add(k);
+      }
+      const sl = xRod(sleeve, 0.025, m.chrome, G().disc);
       sl.position.x = s * (length / 2 - sleeve / 2);
-      const collar = xRod(0.03, 0.036, m.chrome);
+      const collar = xRod(0.03, 0.036, m.chrome, G().disc);
       collar.position.x = s * (length / 2 - sleeve);
-      g.add(sl, collar);
+      const ring = xRod(0.006, 0.0262, m.steel, G().disc);
+      ring.position.x = s * (length / 2 - sleeve + 0.03);
+      const end = xRod(0.008, 0.0235, m.steel, G().disc);
+      end.position.x = s * (length / 2 + 0.004);
+      g.add(sl, collar, ring, end);
       if (plates) {
         const t = big ? 0.06 : 0.04;
-        const p = plateDisc(big ? 0.225 : 0.12, t);
+        const p = plateDisc(big ? 0.225 : 0.12, t, big ? 20 : 5);
         p.position.x = s * (length / 2 - sleeve + t / 2 + 0.02);
         g.add(p);
         const lock = xRod(0.02, 0.032, m.accent);
@@ -411,18 +616,35 @@ function barbell(style: "straight" | "ez" | "trap", length: number, plates: bool
   };
 }
 
-function dumbbell(to: "handL" | "handR" | "hands"): Built {
+function dumbbell(to: "handL" | "handR" | "hands", kg = 12): Built {
   const m = M();
   const g = new THREE.Group();
-  g.add(xRod(0.13, 0.016, m.chrome));
+  const r = 0.06;
+  const len = 0.074;
+  const inner = 0.064;
+  // Knurled grip between smooth steel shoulders.
+  g.add(knurledRod(0.104, 0.0162));
   for (const s of [1, -1]) {
-    const h = xRod(0.07, 0.058, m.plate, G().hex);
-    h.position.x = s * 0.1;
-    const collar = xRod(0.008, 0.026, m.chrome, G().disc);
-    collar.position.x = s * 0.063;
-    const cap = xRod(0.012, 0.03, m.chrome, G().disc);
-    cap.position.x = s * 0.141;
-    g.add(h, collar, cap);
+    const shoulder = xRod(inner - 0.052, 0.0168, m.steel);
+    shoulder.position.x = (s * (0.052 + inner)) / 2;
+    const flange = xRod(0.006, 0.024, m.chrome, G().disc);
+    flange.position.x = s * (inner - 0.003);
+    const head = mesh(hexHeadGeo(r, len), m.rubber);
+    head.position.x = s * (inner + len / 2);
+    // Chrome end cap with a recessed bolt.
+    const cap = xRod(0.005, 0.027, m.chrome, G().disc);
+    cap.position.x = s * (inner + len + 0.0015);
+    const boltHead = xRod(0.004, 0.009, m.steel, G().hex);
+    boltHead.position.x = s * (inner + len + 0.005);
+    g.add(shoulder, flange, head, cap, boltHead);
+    // Weight painted on the top and bottom flats.
+    const flat = hexFlat(r) + 0.0003;
+    for (const f of [1, -1]) {
+      const l = label(String(kg), 0.046);
+      l.position.set(s * (inner + len / 2), f * flat, 0);
+      l.rotation.x = -f * (Math.PI / 2);
+      g.add(l);
+    }
   }
   return {
     object: g,
@@ -444,15 +666,59 @@ function dumbbell(to: "handL" | "handR" | "hands"): Built {
   };
 }
 
+let bellGeo: THREE.BufferGeometry | null = null;
+/** Cast-iron bell turned on a lathe: a flat base ring, the ball, a shoulder. Centre at the origin. */
+function kettlebellGeo() {
+  if (!bellGeo) {
+    const pts = [new THREE.Vector2(0, -0.087), new THREE.Vector2(0.044, -0.087), new THREE.Vector2(0.05, -0.084)];
+    for (let i = 0; i <= 24; i++) {
+      const a = rad(-57 + (i / 24) * 147);
+      pts.push(new THREE.Vector2(Math.cos(a) * 0.099, Math.sin(a) * 0.096));
+    }
+    pts.push(new THREE.Vector2(0, 0.096));
+    bellGeo = new THREE.LatheGeometry(pts, 56);
+  }
+  return bellGeo;
+}
+let decalGeo: THREE.BufferGeometry | null = null;
+/** A w × w decal facing +Z wrapped onto a sphere of radius `r` about the origin, centred `y` above its equator. */
+function sphereDecalGeo(r: number, w: number, y: number) {
+  if (!decalGeo) {
+    decalGeo = new THREE.PlaneGeometry(w, w, 10, 10);
+    const pos = decalGeo.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < pos.count; i++) {
+      const px = pos.getX(i);
+      const py = pos.getY(i) + y;
+      pos.setXYZ(i, px, py, Math.sqrt(Math.max(0, r * r - px * px - py * py)));
+    }
+    decalGeo.computeVertexNormals();
+  }
+  return decalGeo;
+}
+let handleGeo: THREE.BufferGeometry | null = null;
+/** Window handle: horns rising from the shoulders to a round grip, the hand at the origin. */
+function kettleHandleGeo() {
+  if (!handleGeo) {
+    const c = new THREE.CatmullRomCurve3(
+      [[-0.052, -0.088], [-0.062, -0.05], [-0.055, -0.016], [-0.03, -0.002], [0, 0.0], [0.03, -0.002], [0.055, -0.016], [0.062, -0.05], [0.052, -0.088]].map(
+        ([x, y]) => new THREE.Vector3(x, y, 0),
+      ),
+    );
+    handleGeo = new THREE.TubeGeometry(c, 64, 0.0125, 14, false);
+  }
+  return handleGeo;
+}
+
 function kettlebell(p: Part & { kind: "kettlebell" }): Built {
   const m = M();
   const g = new THREE.Group();
-  const bell = mesh(G().sphere, m.plate);
-  bell.scale.set(0.1, 0.095, 0.1);
+  const bell = mesh(kettlebellGeo(), m.cast);
   bell.position.y = -0.13;
-  const handle = mesh(new THREE.TorusGeometry(0.055, 0.013, 10, 24, Math.PI), m.plate);
-  handle.position.y = -0.06;
-  g.add(bell, handle);
+  const handle = mesh(kettleHandleGeo(), m.cast);
+  // The weight, cast on the front: a decal bent onto the ball.
+  const kg = new THREE.Mesh(sphereDecalGeo(0.0992, 0.04, 0.012), label("16", 1).material);
+  kg.position.y = -0.13;
+  g.add(bell, handle, kg);
   return {
     object: g,
     update(sk) {
@@ -648,7 +914,7 @@ function sled(p: Part & { kind: "sled" }): Built {
     horn.position.set(s * 0.44, -0.08, 0.1);
     carriage.add(horn);
     for (let k = 0; k < 2; k++) {
-      const pl = plateDisc(0.2, 0.045);
+      const pl = plateDisc(0.2, 0.045, 20);
       pl.position.set(s * (0.37 + k * 0.05), -0.08, 0.1);
       carriage.add(pl);
     }

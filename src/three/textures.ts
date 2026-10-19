@@ -84,7 +84,15 @@ function texture(data: Uint8Array, size: number, colour: boolean) {
   return t;
 }
 
-let cache: { powder: THREE.Texture; leather: THREE.Texture; rubber: THREE.Texture } | null = null;
+/** Diamond knurl: two crossed helical grooves, 16 pyramids per tile edge. */
+function knurl(u: number, v: number) {
+  const n = 16;
+  const a = Math.abs(((u + v) * n) % 1 - 0.5) * 2;
+  const b = Math.abs((((u - v) * n) % 1 + 1) % 1 - 0.5) * 2;
+  return Math.min(a, b);
+}
+
+let cache: { powder: THREE.Texture; leather: THREE.Texture; rubber: THREE.Texture; knurl: THREE.Texture } | null = null;
 
 /** Normal maps shared by the equipment materials. */
 export function surfaceMaps() {
@@ -95,7 +103,76 @@ export function surfaceMaps() {
     leather: normalMap(256, (u, v) => Math.min(1, cellBorder(u, v, 40, 3) * 3) + valueNoise(u, v, 64, 4) * 0.15, 1.2),
     // Moulded rubber: a soft mottle.
     rubber: normalMap(128, (u, v) => valueNoise(u, v, 16, 5) * 0.6 + valueNoise(u, v, 40, 6) * 0.4, 0.8),
+    // Machined steel grip: crossed grooves leaving sharp pyramids.
+    knurl: normalMap(256, knurl, 3),
   });
+}
+
+/** A copy of a shared map with its own repeat (same image, no new upload). */
+export function repeated(t: THREE.Texture, u: number, v: number) {
+  const c = t.clone();
+  c.repeat.set(u, v);
+  c.needsUpdate = true;
+  return c;
+}
+
+// Seven-segment strokes in a 0–1 cell (x right, y down): a b c d e f g.
+const SEGMENTS: [number, number, number, number][] = [
+  [0.18, 0.1, 0.82, 0.1],
+  [0.82, 0.1, 0.82, 0.5],
+  [0.82, 0.5, 0.82, 0.9],
+  [0.18, 0.9, 0.82, 0.9],
+  [0.18, 0.5, 0.18, 0.9],
+  [0.18, 0.1, 0.18, 0.5],
+  [0.18, 0.5, 0.82, 0.5],
+];
+const DIGITS: Record<string, string> = {
+  "0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc",
+  "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg",
+};
+
+function segDist(x: number, y: number, [ax, ay, bx, by]: [number, number, number, number]) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const t = Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(x - ax - dx * t, y - ay - dy * t);
+}
+
+const labels = new Map<string, THREE.Texture>();
+/**
+ * Painted numerals for weight markings: rounded strokes in white on a clear
+ * background, `text` of digits. Use as a decal map.
+ */
+export function labelTexture(text: string) {
+  let t = labels.get(text);
+  if (t) return t;
+  const cw = 48;
+  const w = cw * text.length;
+  const h = 64;
+  // Sized for at least two digits, so "5" and "10" print at the same height.
+  const size = 1 << Math.ceil(Math.log2(Math.max(cw * Math.max(2, text.length), h)));
+  const data = new Uint8Array(size * size * 4);
+  const ox = (size - w) / 2;
+  const oy = (size - h) / 2;
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const i = Math.floor((x - ox) / cw);
+      const ch = text[i];
+      let a = 0;
+      if (ch && DIGITS[ch] && y >= oy && y < oy + h) {
+        const sx = (x - ox - i * cw) / cw;
+        const sy = (y - oy) / h;
+        let d = Infinity;
+        for (const s of DIGITS[ch]) d = Math.min(d, segDist(sx, sy * 1.35, SEGMENTS[s.charCodeAt(0) - 97].map((c, k) => (k % 2 ? c * 1.35 : c)) as [number, number, number, number]));
+        a = Math.max(0, Math.min(1, (0.085 - d) * 60));
+      }
+      const o = ((size - 1 - y) * size + x) * 4;
+      data[o] = data[o + 1] = data[o + 2] = 255;
+      data[o + 3] = a * 255;
+    }
+  t = texture(data, size, true);
+  labels.set(text, t);
+  return t;
 }
 
 /**

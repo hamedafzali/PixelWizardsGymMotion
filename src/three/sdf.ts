@@ -96,6 +96,24 @@ export function primDist(s: Prim, x: number, y: number, z: number): number {
   return out + Math.min(Math.max(qx, qy, qz), 0) - s.round;
 }
 
+/**
+ * A lower bound on the distance to `s`, for deciding which shapes can be
+ * skipped. The ellipsoid estimate above can overshoot on flat ellipsoids, and
+ * a skipped shape that mattered leaves a seam where one block meets the next.
+ */
+function primBound(s: Prim, x: number, y: number, z: number): number {
+  if (s.kind !== 0) return primDist(s, x, y, z);
+  const dx = x - s.c[0];
+  const dy = y - s.c[1];
+  const dz = z - s.c[2];
+  const [u, v, w] = s.ax;
+  const ax = (dx * u[0] + dy * u[1] + dz * u[2]) / s.r[0];
+  const ay = (dx * v[0] + dy * v[1] + dz * v[2]) / s.r[1];
+  const az = (dx * w[0] + dy * w[1] + dz * w[2]) / s.r[2];
+  const k0 = Math.sqrt(ax * ax + ay * ay + az * az);
+  return (k0 - 1) * (k0 > 1 ? Math.min(s.r[0], s.r[1], s.r[2]) : Math.max(s.r[0], s.r[1], s.r[2]));
+}
+
 /** Polynomial smooth minimum. */
 function smin(a: number, b: number, k: number): number {
   const h = Math.max(k - Math.abs(a - b), 0) / k;
@@ -210,7 +228,7 @@ export function meshField(prims: readonly Prim[], h: number): SurfaceMesh {
     const R = radius * 1.25 + h;
     const list = all.filter((i) => {
       const s = prims[i];
-      const di = primDist(s, cx, cy, cz) - R;
+      const di = primBound(s, cx, cy, cz) - R;
       return s.sub ? di < s.k + Math.abs(dc) + R : di < dc + R + s.k;
     });
     lists.set(id, list);
@@ -258,52 +276,7 @@ export function meshField(prims: readonly Prim[], h: number): SurfaceMesh {
   const nv = pos.length / 3;
   const position = new Float32Array(nv * 3);
   const normal = new Float32Array(nv * 3);
-  const e = h * 0.25;
-  const local: number[] = [];
-  for (let v = 0; v < nv; v++) {
-    let x = pos[v * 3];
-    let y = pos[v * 3 + 1];
-    let z = pos[v * 3 + 2];
-    // Only the shapes that shape the surface here (exact: the others are no-ops).
-    const list = lists.get(vBlock[v])!;
-    const d0 = field(prims, list, x, y, z);
-    local.length = 0;
-    for (const i of list) {
-      const s = prims[i];
-      const di = primDist(s, x, y, z) - h;
-      if (s.sub ? di < s.k + Math.abs(d0) + h : di < d0 + h + s.k) local.push(i);
-    }
-    const f = (a: number, b: number, c: number) => field(prims, local, a, b, c);
-    let gx = 0;
-    let gy = 0;
-    let gz = 0;
-    for (let it = 0; it < 3; it++) {
-      // Tetrahedral gradient: four samples.
-      const a = f(x + e, y - e, z - e);
-      const b = f(x - e, y - e, z + e);
-      const c = f(x - e, y + e, z - e);
-      const d = f(x + e, y + e, z + e);
-      gx = (a - b - c + d) / (4 * e);
-      gy = (-a - b + c + d) / (4 * e);
-      gz = (-a + b - c + d) / (4 * e);
-      if (it === 2) break;
-      const g2 = gx * gx + gy * gy + gz * gz;
-      if (g2 < 1e-8) break;
-      let s = (a + b + c + d) / 4 / g2;
-      const step = Math.abs(s) * Math.sqrt(g2);
-      if (step > h * 0.5) s *= (h * 0.5) / step;
-      x -= s * gx;
-      y -= s * gy;
-      z -= s * gz;
-    }
-    const gl = Math.sqrt(gx * gx + gy * gy + gz * gz) || 1;
-    position[v * 3] = x;
-    position[v * 3 + 1] = y;
-    position[v * 3 + 2] = z;
-    normal[v * 3] = gx / gl;
-    normal[v * 3 + 1] = gy / gl;
-    normal[v * 3 + 2] = gz / gl;
-  }
+  for (let v = 0; v < nv; v++) project(prims, lists.get(vBlock[v])!, pos, v, h, position, normal, v);
 
   // Pass 2: a quad around every grid edge the surface crosses.
   const index: number[] = [];
@@ -347,4 +320,201 @@ export function meshField(prims: readonly Prim[], h: number): SurfaceMesh {
     index: new Uint32Array(index),
     near: (v) => lists.get(vBlock[v])!,
   };
+}
+
+/**
+ * Moves point `v` of `src` onto the surface with a few Newton steps (each at
+ * most `h / 2`), and writes it and its gradient normal to slot `o`.
+ */
+function project(
+  prims: readonly Prim[],
+  list: readonly number[],
+  src: ArrayLike<number>,
+  v: number,
+  h: number,
+  position: Float32Array,
+  normal: Float32Array,
+  o: number,
+  iterations = 3,
+) {
+  let x = src[v * 3];
+  let y = src[v * 3 + 1];
+  let z = src[v * 3 + 2];
+  // Only the shapes that shape the surface here (exact: the others are no-ops).
+  const d0 = field(prims, list, x, y, z);
+  const local: number[] = [];
+  for (const i of list) {
+    const s = prims[i];
+    const di = primBound(s, x, y, z) - h;
+    if (s.sub ? di < s.k + Math.abs(d0) + h : di < d0 + h + s.k) local.push(i);
+  }
+  const f = (a: number, b: number, c: number) => field(prims, local, a, b, c);
+  const e = h * 0.25;
+  let gx = 0;
+  let gy = 0;
+  let gz = 0;
+  for (let it = 0; it < iterations; it++) {
+    // Tetrahedral gradient: four samples.
+    const a = f(x + e, y - e, z - e);
+    const b = f(x - e, y - e, z + e);
+    const c = f(x - e, y + e, z - e);
+    const d = f(x + e, y + e, z + e);
+    gx = (a - b - c + d) / (4 * e);
+    gy = (-a - b + c + d) / (4 * e);
+    gz = (-a + b - c + d) / (4 * e);
+    if (it === iterations - 1) break;
+    const g2 = gx * gx + gy * gy + gz * gz;
+    if (g2 < 1e-8) break;
+    let s = (a + b + c + d) / 4 / g2;
+    const step = Math.abs(s) * Math.sqrt(g2);
+    // Within a few microns: on the surface, and the gradient is the normal here.
+    if (step < 5e-6) break;
+    if (step > h * 0.5) s *= (h * 0.5) / step;
+    x -= s * gx;
+    y -= s * gy;
+    z -= s * gz;
+  }
+  const gl = Math.sqrt(gx * gx + gy * gy + gz * gz) || 1;
+  position[o * 3] = x;
+  position[o * 3 + 1] = y;
+  position[o * 3 + 2] = z;
+  normal[o * 3] = gx / gl;
+  normal[o * 3 + 1] = gy / gl;
+  normal[o * 3 + 2] = gz / gl;
+}
+
+/**
+ * Adaptive detail: splits triangles longer than `target(x, y, z)` allows, 1:4,
+ * and pulls the new vertices onto the true surface, so small features (lips,
+ * eyelids, knuckles) appear where they are wanted without meshing the whole
+ * body that finely. Neighbours are split 1:2 so the mesh stays watertight.
+ */
+export function refine(
+  prims: readonly Prim[],
+  m: SurfaceMesh,
+  target: (x: number, y: number, z: number) => number,
+  levels: number,
+): SurfaceMesh {
+  let position = m.position;
+  let normal = m.normal;
+  let index = m.index;
+  let near: (readonly number[])[] = Array.from({ length: position.length / 3 }, (_, v) => m.near(v));
+  for (let level = 0; level < levels; level++) {
+    const P = position;
+    const len = (a: number, b: number) => Math.hypot(P[a * 3] - P[b * 3], P[a * 3 + 1] - P[b * 3 + 1], P[a * 3 + 2] - P[b * 3 + 2]);
+    const key = (a: number, b: number) => (a < b ? a * 4294967296 + b : b * 4294967296 + a);
+    const split = new Map<number, number>(); // edge → new vertex (assigned later)
+    const nt = index.length / 3;
+    for (let t = 0; t < nt; t++) {
+      const a = index[t * 3];
+      const b = index[t * 3 + 1];
+      const c = index[t * 3 + 2];
+      const cx = (P[a * 3] + P[b * 3] + P[c * 3]) / 3;
+      const cy = (P[a * 3 + 1] + P[b * 3 + 1] + P[c * 3 + 1]) / 3;
+      const cz = (P[a * 3 + 2] + P[b * 3 + 2] + P[c * 3 + 2]) / 3;
+      if (Math.max(len(a, b), len(b, c), len(c, a)) > target(cx, cy, cz) * 1.4)
+        for (const [p, q] of [[a, b], [b, c], [c, a]]) split.set(key(p, q), -1);
+    }
+    if (!split.size) break;
+    // Close up: a triangle with two split edges gets its third, so every
+    // triangle splits 1:1, 1:2 or 1:4 and none turns into slivers.
+    // Only triangles around a newly split edge can change, so walk those.
+    const nvP = P.length / 3;
+    const start = new Uint32Array(nvP + 1);
+    for (let i = 0; i < index.length; i++) start[index[i] + 1]++;
+    for (let i = 0; i < nvP; i++) start[i + 1] += start[i];
+    const fill = start.slice(0, nvP);
+    const vt = new Uint32Array(index.length); // vertex → triangles
+    for (let t = 0; t < nt; t++) for (let j = 0; j < 3; j++) vt[fill[index[t * 3 + j]]++] = t;
+    let queue = [...split.keys()];
+    while (queue.length) {
+      const next: number[] = [];
+      for (const k of queue) {
+        const p = Math.floor(k / 4294967296);
+        const q = k % 4294967296;
+        for (let i = start[p]; i < start[p + 1]; i++) {
+          const t = vt[i];
+          const a = index[t * 3];
+          const b = index[t * 3 + 1];
+          const c = index[t * 3 + 2];
+          if (a !== q && b !== q && c !== q) continue;
+          const k1 = key(a, b);
+          const k2 = key(b, c);
+          const k3 = key(c, a);
+          const h1 = split.has(k1);
+          const h2 = split.has(k2);
+          const h3 = split.has(k3);
+          if (+h1 + +h2 + +h3 !== 2) continue;
+          const missing = !h1 ? k1 : !h2 ? k2 : k3;
+          split.set(missing, -1);
+          next.push(missing);
+        }
+      }
+      queue = next;
+    }
+    const nv0 = P.length / 3;
+    const nv = nv0 + split.size;
+    const pos = new Float32Array(nv * 3);
+    const nor = new Float32Array(nv * 3);
+    pos.set(P);
+    nor.set(normal);
+    const nr = near.slice();
+    let v = nv0;
+    const mids = new Float32Array(3);
+    for (const k of split.keys()) {
+      const a = Math.floor(k / 4294967296);
+      const b = k % 4294967296;
+      for (let i = 0; i < 3; i++) mids[i] = (P[a * 3 + i] + P[b * 3 + i]) / 2;
+      const list = near[a] === near[b] ? near[a] : [...new Set([...near[a], ...near[b]])];
+      project(prims, list, mids, 0, len(a, b), pos, nor, v, 8);
+      nr.push(list);
+      split.set(k, v++);
+    }
+    const out: number[] = [];
+    for (let t = 0; t < nt; t++) {
+      const [a, b, c] = [index[t * 3], index[t * 3 + 1], index[t * 3 + 2]];
+      const ab = split.get(key(a, b));
+      const bc = split.get(key(b, c));
+      const ca = split.get(key(c, a));
+      if (ab !== undefined && bc !== undefined && ca !== undefined) out.push(a, ab, ca, ab, b, bc, ca, bc, c, ab, bc, ca);
+      else if (ab !== undefined) out.push(a, ab, c, ab, b, c);
+      else if (bc !== undefined) out.push(a, b, bc, a, bc, c);
+      else if (ca !== undefined) out.push(a, b, ca, ca, b, c);
+      else out.push(a, b, c);
+    }
+    position = pos;
+    normal = nor;
+    index = new Uint32Array(out);
+    near = nr;
+  }
+  // Relax: move each refined vertex towards the middle of its neighbours and
+  // back onto the surface, which evens out the 1:2 slivers and any folds
+  // left where the coarse grid cut across a small feature.
+  const nv = position.length / 3;
+  const P = position;
+  const active = new Uint8Array(nv);
+  for (let v = 0; v < nv; v++) active[v] = target(P[v * 3], P[v * 3 + 1], P[v * 3 + 2]) < Infinity ? 1 : 0;
+  const ring: number[][] = Array.from({ length: nv }, () => []);
+  for (let t = 0; t < index.length; t += 3)
+    for (let j = 0; j < 3; j++) {
+      const a = index[t + j];
+      const b = index[t + ((j + 1) % 3)];
+      if (active[a]) ring[a].push(b);
+      if (active[b]) ring[b].push(a);
+    }
+  const avg = new Float32Array(3);
+  for (let it = 0; it < 2; it++)
+    for (let v = 0; v < nv; v++) {
+      const r = ring[v];
+      if (!r.length) continue;
+      avg.fill(0);
+      let edge = 0;
+      for (const u of r) {
+        for (let i = 0; i < 3; i++) avg[i] += P[u * 3 + i] / r.length;
+        edge += Math.hypot(P[u * 3] - P[v * 3], P[u * 3 + 1] - P[v * 3 + 1], P[u * 3 + 2] - P[v * 3 + 2]) / r.length;
+      }
+      project(prims, near[v], avg, 0, edge, P, normal, v, 8);
+    }
+  const lists = near;
+  return { position, normal, index, near: (v) => lists[v] };
 }

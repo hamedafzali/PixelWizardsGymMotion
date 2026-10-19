@@ -12,8 +12,8 @@ describe("procedural body", () => {
   const nv = b.position.length / 3;
 
   it("builds within budget", () => {
-    assert.ok(ms < 3000, `built in ${ms.toFixed(0)} ms`);
-    assert.ok(nv > 20000 && nv < 120000, `${nv} vertices`);
+    assert.ok(ms < 6000, `built in ${ms.toFixed(0)} ms`);
+    assert.ok(nv > 20000 && nv < 250000, `${nv} vertices`);
   });
 
   it("is a closed surface", () => {

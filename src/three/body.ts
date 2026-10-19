@@ -2,7 +2,7 @@ import { MUSCLES } from "../muscles.js";
 import { BODY, sideSign, solve, STAND, type Skeleton } from "../rig.js";
 import type { Muscle, Pose, V3 } from "../types.js";
 import { add, cross, dot, len, mul, norm, sub } from "../vec.js";
-import { meshField, primDist, type Prim } from "./sdf.js";
+import { meshField, primDist, refine, type Prim } from "./sdf.js";
 
 // The body is modelled once, in a relaxed A-pose, as a signed distance field:
 // bones, muscle bellies and features are ellipsoids and round cones in each
@@ -149,11 +149,22 @@ export function bindPose(): Pose {
 // ── Anatomy ────────────────────────────────────────────────────────────────
 
 /** What a shape paints when it is the nearest one. */
-export type Paint = "skin" | "hair" | "shoe" | "sole" | "sock" | "shorts";
-export const PAINTS: Paint[] = ["skin", "hair", "shoe", "sole", "sock", "shorts"];
+export type Paint = "skin" | "hair" | "shoe" | "sole" | "sock" | "shorts" | "eye" | "iris" | "lips" | "brow";
+export const PAINTS: Paint[] = ["skin", "hair", "shoe", "sole", "sock", "shorts", "eye", "iris", "lips", "brow"];
 export const PAINT_COUNT = PAINTS.length;
 const SOCK = PAINTS.indexOf("sock");
 const SHORTS = PAINTS.indexOf("shorts");
+const SOLE = PAINTS.indexOf("sole");
+/**
+ * Paints that sit inside other shapes and override the rest: the eye behind
+ * its lids wins on its own surface; brows win wherever the skin lies within
+ * them (they are buried under the brow ridge).
+ */
+const INSET: [paint: number, inside: boolean][] = [
+  [PAINTS.indexOf("eye"), false],
+  [PAINTS.indexOf("iris"), false],
+  [PAINTS.indexOf("brow"), true],
+];
 
 interface Shape {
   /** Ellipsoid [centre, radii], round cone [a, b, ra, rb] or rounded box [centre, half, round]. */
@@ -181,10 +192,17 @@ const TORSO: Shape[] = [
   M(C([0.02, 0.478, 0.058], [0.16, 0.466, 0.02], 0.012, 0.012, { k: 0.016 })), // collarbone
   M(E([0.072, 0.385, 0.07], [0.076, 0.06, 0.042], { k: 0.02, muscle: "chest" })),
   M(C([0.09, 0.405, 0.064], [0.165, 0.43, 0.035], 0.04, 0.028, { k: 0.02, muscle: "chest" })),
-  E([0, 0.2, 0.068], [0.066, 0.14, 0.036], { k: 0.025, muscle: "abs" }),
-  ...[0.125, 0.195, 0.265].map((y) => M(E([0.03, y, 0.09], [0.031, 0.034, 0.012], { k: 0.02, muscle: "abs" }))),
-  C([0, 0.1, 0.103], [0, 0.31, 0.103], 0.0045, 0.0045, { k: 0.012, sub: true }), // linea alba
-  M(E([0.108, 0.165, 0.035], [0.046, 0.1, 0.06], { k: 0.03, muscle: "obliques" })),
+  // Rectus abdominis: a flat sheet, three tendinous rows above the navel and
+  // a smooth lower belly that tucks into the waistband.
+  E([0, 0.2, 0.058], [0.064, 0.14, 0.03], { k: 0.025, muscle: "abs" }),
+  E([0, 0.105, 0.064], [0.052, 0.05, 0.022], { k: 0.025, muscle: "abs" }),
+  ...[0.168, 0.228, 0.284].map((y, i) =>
+    M(E([0.029, y, 0.079 - i * 0.002], [0.028, 0.028 - i * 0.002, 0.011], { k: 0.018, muscle: "abs" })),
+  ),
+  E([0, 0.118, 0.088], [0.0055, 0.0065, 0.008], { k: 0.007, sub: true }), // navel
+  // Serratus: fingers of muscle along the ribs under the armpit.
+  ...[0.255, 0.29, 0.325].map((y) => M(C([0.112, y - 0.012, 0.036], [0.13, y + 0.006, 0.0], 0.011, 0.009, { k: 0.016, muscle: "obliques" }))),
+  M(E([0.104, 0.17, 0.022], [0.042, 0.095, 0.05], { k: 0.05, muscle: "obliques" })),
   M(E([0.116, 0.315, -0.04], [0.05, 0.13, 0.066], { k: 0.03, muscle: "lats" })),
   M(E([0.075, 0.37, -0.074], [0.075, 0.075, 0.036], { k: 0.025, muscle: "upper back" })),
   M(C([0.0, 0.36, -0.072], [0.1, 0.468, -0.034], 0.045, 0.03, { k: 0.03, muscle: "traps" })),
@@ -204,16 +222,41 @@ const NECK: Shape[] = [
 
 // Head: origin at the centre of the skull, y up, z = face.
 const HEAD: Shape[] = [
-  E([0, 0.02, -0.01], [0.075, 0.095, 0.095], { k: 0.02 }), // cranium
+  E([0, 0.016, -0.012], [0.076, 0.091, 0.097], { k: 0.02 }), // cranium
   E([0, -0.04, 0.03], [0.061, 0.062, 0.064], { k: 0.03 }), // face and jaw
-  E([0, -0.088, 0.058], [0.028, 0.02, 0.022], { k: 0.02 }), // chin
+  E([0, -0.087, 0.066], [0.024, 0.018, 0.021], { k: 0.02 }), // chin
+  M(E([0.011, -0.093, 0.077], [0.011, 0.009, 0.01], { k: 0.012 })), // chin mounds
   M(C([0.05, -0.05, -0.012], [0.025, -0.09, 0.05], 0.015, 0.015, { k: 0.022 })), // jawline
-  C([0, 0.012, 0.085], [0, -0.022, 0.1], 0.008, 0.012, { k: 0.012 }), // nose
-  C([0.045, 0.028, 0.078], [-0.045, 0.028, 0.078], 0.012, 0.012, { k: 0.016 }), // brow
-  M(E([0.032, 0.006, 0.093], [0.015, 0.01, 0.009], { k: 0.012, sub: true })), // eye sockets
-  M(E([0.045, -0.012, 0.06], [0.022, 0.018, 0.02], { k: 0.02 })), // cheekbones
-  M(E([0.074, 0.0, -0.008], [0.01, 0.028, 0.018], { k: 0.008 })), // ears
-  E([0, -0.053, 0.088], [0.02, 0.008, 0.01], { k: 0.01 }), // lips
+  M(E([0.047, -0.011, 0.052], [0.026, 0.014, 0.022], { k: 0.03 })), // cheekbones
+  M(E([0.042, -0.048, 0.038], [0.018, 0.026, 0.026], { k: 0.03 })), // cheeks over the masseter
+  // Brows: a ridge rising from the bridge of the nose and fading at the temple.
+  M(C([0.008, 0.024, 0.0832], [0.046, 0.027, 0.0745], 0.006, 0.0048, { k: 0.026 })),
+  E([0, 0.022, 0.087], [0.011, 0.01, 0.007], { k: 0.012 }), // glabella
+  // Eyes: a socket carved under the brow, a lid shell with an almond opening
+  // cut through it, and the eyeball and iris showing behind.
+  M(E([0.031, 0.006, 0.092], [0.016, 0.0095, 0.0105], { k: 0.016, sub: true })),
+  M(E([0.031, 0.003, 0.0712], [0.0127, 0.0118, 0.0124], { k: 0.004 })), // lids
+  M(E([0.031, 0.0022, 0.0842], [0.0122, 0.0041, 0.006], { k: 0.0016, sub: true })), // opening
+  M(E([0.031, 0.003, 0.0712], [0.0114, 0.0114, 0.0114], { k: 0.0012, paint: "eye" })), // eyeball
+  M(E([0.0305, 0.0024, 0.0812], [0.0056, 0.0056, 0.0018], { k: 0.0006, paint: "iris" })),
+  // Brows: hair along the ridge, thick at the bridge, thinning at the temple.
+  M(C([0.011, 0.0262, 0.0888], [0.047, 0.0292, 0.0802], 0.0042, 0.0026, { k: 0.003, paint: "brow" })),
+  // Nose: bridge, tip, wings, nostrils.
+  C([0, 0.008, 0.088], [0, -0.022, 0.104], 0.0058, 0.0075, { k: 0.006 }),
+  E([0, -0.006, 0.091], [0.0105, 0.018, 0.007], { k: 0.012 }), // nose sides
+  E([0, -0.026, 0.103], [0.0095, 0.0085, 0.0088], { k: 0.006 }), // tip
+  M(E([0.0105, -0.03, 0.093], [0.0062, 0.006, 0.0068], { k: 0.006 })), // wings
+  // Mouth: philtrum, lips, and the line between them.
+  M(C([0, -0.0478, 0.094], [0.021, -0.0525, 0.0835], 0.0048, 0.003, { k: 0.006, paint: "lips" })), // upper lip
+  M(E([0.0075, -0.0585, 0.0895], [0.0125, 0.0056, 0.0064], { k: 0.006, paint: "lips" })), // lower lip
+  M(C([0, -0.0528, 0.0975], [0.0215, -0.0538, 0.0855], 0.0014, 0.0011, { k: 0.005, sub: true })), // mouth line
+  // Ears: a shell with a rolled rim and a hollow.
+  M(E([0.074, -0.004, -0.01], [0.007, 0.027, 0.016], { k: 0.006 })),
+  M(C([0.079, 0.016, 0.0], [0.081, 0.023, -0.012], 0.0032, 0.0034, { k: 0.003 })),
+  M(C([0.081, 0.023, -0.012], [0.081, 0.008, -0.025], 0.0034, 0.0034, { k: 0.003 })),
+  M(C([0.081, 0.008, -0.025], [0.08, -0.015, -0.02], 0.0034, 0.0034, { k: 0.003 })),
+  M(C([0.08, -0.015, -0.02], [0.077, -0.028, -0.01], 0.0034, 0.0055, { k: 0.004 })), // lobe
+  M(E([0.0805, -0.004, -0.009], [0.004, 0.011, 0.0075], { k: 0.003, sub: true })), // hollow
   E([0, 0.036, -0.02], [0.08, 0.094, 0.1], { k: 0.01, paint: "hair" }),
 ];
 
@@ -249,20 +292,29 @@ const HAND: Shape[] = (() => {
     const pts = [0, 70, 150, 150 + reach].map(arc);
     const p = pts.map(([y, z]) => [x, y, z] as V3);
     return [
-      E(p[0], [0.011, 0.01, 0.011], { k: 0.01 }), // knuckle
-      C(p[0], p[1], rad, rad * 0.95, { k: 0.008 }),
-      C(p[1], p[2], rad * 0.95, rad * 0.9, { k: 0.008 }),
-      C(p[2], p[3], rad * 0.9, rad * 0.82, { k: 0.008 }),
+      E(p[0], [0.0108, 0.0105, 0.011], { k: 0.008 }), // knuckle
+      C(p[0], p[1], rad, rad * 0.98, { k: 0.008 }),
+      C(p[1], p[2], rad * 0.98, rad * 0.94, { k: 0.008 }),
+      C(p[2], p[3], rad * 0.94, rad * 0.84, { k: 0.007 }),
     ];
   };
   return [
     C([0, -0.088, 0], [0, -0.06, -0.008], 0.0265, 0.025, { k: 0.016 }),
-    { box: [[0, -0.032, -0.03], [0.036, 0.032, 0.008], 0.009], k: 0.016 },
+    { box: [[0, -0.034, -0.028], [0.031, 0.03, 0.003], 0.011], k: 0.016 },
+    E([0.002, -0.036, -0.032], [0.04, 0.038, 0.013], { k: 0.012 }), // domed back of the hand
     E([-0.03, -0.045, -0.018], [0.02, 0.03, 0.016], { k: 0.015 }), // thumb pad
-    ...finger(-0.033, 62, 0.0092),
-    ...finger(-0.011, 72, 0.0098),
-    ...finger(0.011, 66, 0.0094),
-    ...finger(0.031, 50, 0.0082),
+    // Fingers packed side by side, as in a real grip: no gaps between them.
+    ...finger(-0.03, 62, 0.0104),
+    ...finger(-0.01, 72, 0.0108),
+    ...finger(0.01, 66, 0.0105),
+    ...finger(0.029, 50, 0.0095),
+    // Flesh between the curled fingers, so the joints meet without pockets.
+    // Straight phalanges sag inside the arc between joints; pad each span
+    // back out to it so the wrap reads as round flesh, not a polygon.
+    ...[35, 110].map((deg) => {
+      const [y, z] = arc(deg);
+      return C([-0.029, y, z], [0.028, y, z], 0.0094, 0.0086, { k: 0.008 });
+    }),
     C([-0.04, -0.05, -0.024], [-0.048, -0.014, 0.0], 0.013, 0.011, { k: 0.012 }), // thumb
     C([-0.048, -0.014, 0.0], [-0.028, 0.002, 0.03], 0.011, 0.0095, { k: 0.01 }),
   ];
@@ -286,7 +338,7 @@ const SHIN: Shape[] = [
   E([0.02, 0.11, -0.03], [0.03, 0.075, 0.032], { k: 0.02, muscle: "calves" }),
   E([0, 0.22, -0.02], [0.042, 0.1, 0.03], { k: 0.025, muscle: "calves" }),
   E([0.015, 0.15, 0.025], [0.022, 0.1, 0.02], { k: 0.02 }), // tibialis
-  E([0.026, 0.41, 0], [0.014, 0.016, 0.014], { k: 0.012 }), // ankle bones
+  E([0.022, 0.41, 0], [0.011, 0.014, 0.011], { k: 0.012 }), // ankle bones
   E([-0.024, 0.4, 0], [0.014, 0.016, 0.014], { k: 0.012 }),
 ];
 
@@ -296,7 +348,14 @@ const FOOT: Shape[] = [
   C([0, 0.0, -0.025], [-0.005, 0.15, -0.05], 0.042, 0.027, { k: 0.025, paint: "shoe" }),
   E([-0.006, 0.155, -0.056], [0.043, 0.056, 0.025], { k: 0.02, paint: "shoe" }), // toe box
   C([0, -0.012, -0.02], [0, 0.0, 0.018], 0.04, 0.035, { k: 0.02, paint: "shoe" }), // collar
-  { box: [[-0.004, 0.06, -0.068], [0.04, 0.124, 0.006], 0.006], k: 0.008, paint: "sole" },
+  // Sole: a thick heel and thinner forefoot following the upper's outline,
+  // rounded at both ends, with a little toe spring. Painted by height (SOLE_TOP).
+  { box: [[0, -0.025, -0.071], [0.026, 0.04, 0.002], 0.009], k: 0.015, paint: "shoe" },
+  { box: [[-0.005, 0.08, -0.074], [0.031, 0.1, 0.0], 0.008], k: 0.015, paint: "shoe" },
+  E([0, -0.05, -0.07], [0.035, 0.03, 0.011], { k: 0.015, paint: "shoe" }), // heel
+  E([-0.006, 0.178, -0.07], [0.039, 0.034, 0.009], { k: 0.015, paint: "shoe" }), // toe
+  // Tongue; the laces are painted across it (LACES).
+  C([0, 0.018, 0.02], [-0.003, 0.085, -0.002], 0.016, 0.014, { k: 0.012, paint: "shoe" }),
 ];
 
 // ── Building ───────────────────────────────────────────────────────────────
@@ -355,6 +414,13 @@ export interface BodyMesh {
 
 const SIGMA = 0.02;
 
+/** Where the cloth ends, in bone-local y: torso (waistband), thigh (shorts), shin (sock cuff). */
+const HEM = { waist: 0.07, thigh: 0.17, sock: 0.355 };
+/** Height in the foot frame where the sole's sidewall meets the upper. */
+const SOLE_TOP = -0.062;
+/** Laces across the tongue in the foot frame: rows along y, half-width in x, and the band's half-thickness. */
+const LACES = { rows: [0.03, 0.047, 0.064, 0.081], half: 0.017, band: 0.0028 };
+
 /** Models, meshes and weights the body. Takes a few hundred milliseconds; cache the result. */
 export function buildBody(cell = 0.0065): BodyMesh {
   const bindSkeleton = solve(bindPose());
@@ -373,12 +439,43 @@ export function buildBody(cell = 0.0065): BodyMesh {
     toPrims(FOOT, BONE.foot[i], bind[BONE.foot[i]], prims, meta);
   }
 
-  const m = meshField(prims, cell);
+  // The face and hands carry features of a few millimetres, finer than the
+  // grid; split the triangles there and pull the new points onto the surface.
+  const head = bind[BONE.head];
+  const hands = [0, 1].map((i) => bind[BONE.hand[i]]);
+  const detail = (x: number, y: number, z: number) => {
+    const p: V3 = [x, y, z];
+    const h = toLocal(head, p);
+    if (Math.hypot(h[0], h[1] - 0.0, h[2] + 0.01) < 0.13) {
+      const face = h[2] > 0.035 && h[1] < 0.045 && h[1] > -0.08;
+      const ear = Math.abs(h[0]) > 0.06 && h[1] < 0.035 && h[2] < 0.01;
+      return face || ear ? 0.0016 : 0.0035;
+    }
+    for (const f of hands) if (Math.hypot(...toLocal(f, p)) < 0.1) return 0.0028;
+    // Feet: laces across the instep, and the sole's top edge.
+    for (const i of [0, 1] as const) {
+      const l = toLocal(bind[BONE.foot[i]], p);
+      if (l[2] > -0.02 && Math.abs(l[0]) < LACES.half + 0.004 && LACES.rows.some((y) => Math.abs(l[1] - y) < LACES.band + 0.003)) return 0.0022;
+      if (Math.abs(l[2] - SOLE_TOP) < 0.004 && l[1] > -0.1 && l[1] < 0.23) return 0.0032;
+    }
+    // Hems: fine enough for the cloth edge to be a clean line with a lip.
+    const t = toLocal(bind[BONE.torso], p);
+    if (Math.abs(t[1] - HEM.waist) < 0.018 && Math.hypot(t[0], t[2]) < 0.2) return 0.0022;
+    for (const i of [0, 1] as const) {
+      const l = toLocal(bind[BONE.thigh[i]], p);
+      if (Math.abs(l[1] - HEM.thigh) < 0.016 && Math.hypot(l[0], l[2]) < 0.12) return 0.0022;
+      const c = toLocal(bind[BONE.shin[i]], p);
+      if (Math.abs(c[1] - HEM.sock) < 0.014 && Math.hypot(c[0], c[2]) < 0.08) return 0.0022;
+    }
+    return Infinity;
+  };
+  const m = refine(prims, meshField(prims, cell), detail, 3);
   const nv = m.position.length / 3;
   const skinIndex = new Uint16Array(nv * 4);
   const skinWeight = new Float32Array(nv * 4);
   const paints = new Float32Array(nv * PAINT_COUNT);
   const paintDist = new Float64Array(PAINT_COUNT);
+  const insetDist = new Float64Array(INSET.length);
   const muscleA = new Uint8Array(nv).fill(255);
   const muscleB = new Uint8Array(nv).fill(255);
   const weightA = new Float32Array(nv);
@@ -387,10 +484,12 @@ export function buildBody(cell = 0.0065): BodyMesh {
   const muscleW = new Float64Array(MUSCLES.length);
   const helperOf = new Map(HELPERS.map((h, i) => [h.parent * 100 + h.child, MAIN_BONES + i]));
 
+  const hem: number[] = [];
   for (let v = 0; v < nv; v++) {
     const p: V3 = [m.position[v * 3], m.position[v * 3 + 1], m.position[v * 3 + 2]];
     boneDist.fill(Infinity);
     paintDist.fill(Infinity);
+    insetDist.fill(Infinity);
     muscleW.fill(0);
     let best = Infinity;
     let owner = 0;
@@ -401,6 +500,11 @@ export function buildBody(cell = 0.0065): BodyMesh {
       const mt = meta[s.tag];
       if (d < boneDist[mt.bone]) boneDist[mt.bone] = d;
       if (d < paintDist[mt.paint]) paintDist[mt.paint] = d;
+      const ins = INSET.findIndex(([j]) => j === mt.paint);
+      if (ins >= 0) {
+        const e = INSET[ins][1] ? Math.max(d, 0) : Math.abs(d);
+        if (e < insetDist[ins]) insetDist[ins] = e;
+      }
       if (d < best) {
         best = d;
         owner = s.tag;
@@ -450,27 +554,64 @@ export function buildBody(cell = 0.0065): BodyMesh {
     // share by region.
     const pw = paints.subarray(v * PAINT_COUNT, (v + 1) * PAINT_COUNT);
     paintDist[PAINTS.indexOf("hair")] -= 0.0012; // the hair sits only a few millimetres proud
+    const shoeDist = paintDist[PAINTS.indexOf("shoe")];
     const dm = Math.min(...paintDist);
     let sum = 0;
     for (let j = 0; j < PAINT_COUNT; j++) sum += pw[j] = paintDist[j] < Infinity ? Math.exp(-(paintDist[j] - dm) / 0.0012) : 0;
     for (let j = 0; j < PAINT_COUNT; j++) pw[j] /= sum;
+    INSET.forEach(([j], i) => {
+      const w = 1 - smooth(0.0001, 0.0004, insetDist[i]);
+      for (let k = 0; k < PAINT_COUNT; k++) pw[k] *= 1 - w;
+      pw[j] += w;
+    });
+    // Shorts: below the waistband, and above the hem on whichever thigh is
+    // near. Socks: below their cuff. Both are cloth over the skin, so they
+    // stand a little proud of it and end in a small lip.
     let rw = 0;
-    let rp = 0;
-    const region = (w: number, as: number) => {
-      if (w > rw) {
-        rw = w;
-        rp = as;
-      }
-    };
-    const tw = boneDist[BONE.torso];
-    if (ob === BONE.torso) region(1 - smooth(0.055, 0.085, toLocal(bind[BONE.torso], p)[1]), SHORTS);
-    for (const i of [0, 1] as const) {
-      const near = ob === BONE.thigh[i] || (boneDist[BONE.thigh[i]] < Infinity && boneDist[BONE.thigh[i]] <= tw + 0.01);
-      if (near) region(1 - smooth(0.162, 0.178, toLocal(bind[BONE.thigh[i]], p)[1]), SHORTS);
-      if (ob === BONE.shin[i] || ob === BONE.foot[i]) region(smooth(0.347, 0.363, toLocal(bind[BONE.shin[i]], p)[1]), SOCK);
+    let rp = SHORTS;
+    const below = 1 - smooth(HEM.waist - 0.0015, HEM.waist + 0.0015, toLocal(bind[BONE.torso], p)[1]);
+    // One hem per side, picked by which leg the point sits over, so the
+    // hemline never steps where vertex ownership changes.
+    let legs = 0;
+    if (ob === BONE.torso || ob === BONE.thigh[0] || ob === BONE.thigh[1]) {
+      const side = Math.abs(p[0] - bind[BONE.thigh[0]].o[0]) <= Math.abs(p[0] - bind[BONE.thigh[1]].o[0]) ? 0 : 1;
+      legs = 1 - smooth(HEM.thigh - 0.0015, HEM.thigh + 0.0015, toLocal(bind[BONE.thigh[side]], p)[1]);
     }
+    rw = below * legs;
+    for (const i of [0, 1] as const)
+      if (ob === BONE.shin[i] || ob === BONE.foot[i]) {
+        const sock = smooth(HEM.sock - 0.0015, HEM.sock + 0.0015, toLocal(bind[BONE.shin[i]], p)[1]);
+        if (sock > rw) {
+          rw = sock;
+          rp = SOCK;
+        }
+      }
+    // Skin that lies on the shoe's surface (where the collar and tongue meet
+    // the ankle) is shoe, not sock.
+    const onShoe = 1 - smooth(0.0008, 0.0025, shoeDist);
+    pw[PAINTS.indexOf("shoe")] += pw[0] * onShoe;
+    pw[0] *= 1 - onShoe;
     pw[rp] += pw[0] * rw;
     pw[0] *= 1 - rw;
+    for (const i of [0, 1] as const)
+      if (ob === BONE.foot[i]) {
+        const SHOE = PAINTS.indexOf("shoe");
+        const w = 1 - smooth(SOLE_TOP - 0.0008, SOLE_TOP + 0.0008, toLocal(bind[BONE.foot[i]], p)[2]);
+        pw[SOLE] += pw[SHOE] * w;
+        pw[SHOE] *= 1 - w;
+        // Laces: crossed bands over the tongue, white like the sole.
+        const l = toLocal(bind[BONE.foot[i]], p);
+        if (l[2] > -0.02 && Math.abs(l[0] + 0.002) < LACES.half + 0.002) {
+          let d = Infinity;
+          for (const y of LACES.rows) d = Math.min(d, Math.abs(l[1] - y));
+          const lw = (1 - smooth(LACES.band - 0.0007, LACES.band + 0.0007, d)) * (1 - smooth(LACES.half - 0.002, LACES.half, Math.abs(l[0] + 0.002)));
+          pw[SOLE] += pw[SHOE] * lw;
+          pw[SHOE] *= 1 - lw;
+        }
+      }
+    const lift = pw[SHORTS] * 0.0028 + pw[SOCK] * 0.0012;
+    for (let j = 0; j < 3; j++) m.position[v * 3 + j] += m.normal[v * 3 + j] * lift;
+    if (rw > 0 && rw < 1) hem.push(v);
 
 
     // The two strongest muscles under this vertex.
@@ -493,6 +634,9 @@ export function buildBody(cell = 0.0065): BodyMesh {
     }
   }
 
+  // The lip at each hem is a real step now; shade it from the geometry.
+  hemNormals(m.position, m.normal, m.index, hem);
+
   return {
     position: m.position,
     normal: m.normal,
@@ -512,4 +656,34 @@ export function buildBody(cell = 0.0065): BodyMesh {
 function smooth(a: number, b: number, x: number) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
+}
+
+/** Recomputes the normals of `verts` (and their neighbours) from the faces around them. */
+function hemNormals(pos: Float32Array, nor: Float32Array, index: Uint32Array, verts: number[]) {
+  const nv = pos.length / 3;
+  const mark = new Uint8Array(nv);
+  for (const v of verts) mark[v] = 1;
+  for (let t = 0; t < index.length; t += 3)
+    if (mark[index[t]] === 1 || mark[index[t + 1]] === 1 || mark[index[t + 2]] === 1)
+      for (let j = 0; j < 3; j++) if (!mark[index[t + j]]) mark[index[t + j]] = 2;
+  const acc = new Float64Array(nv * 3);
+  for (let t = 0; t < index.length; t += 3) {
+    const [a, b, c] = [index[t], index[t + 1], index[t + 2]];
+    if (!mark[a] && !mark[b] && !mark[c]) continue;
+    const ux = pos[b * 3] - pos[a * 3];
+    const uy = pos[b * 3 + 1] - pos[a * 3 + 1];
+    const uz = pos[b * 3 + 2] - pos[a * 3 + 2];
+    const wx = pos[c * 3] - pos[a * 3];
+    const wy = pos[c * 3 + 1] - pos[a * 3 + 1];
+    const wz = pos[c * 3 + 2] - pos[a * 3 + 2];
+    const n = [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx];
+    for (const v of [a, b, c]) for (let j = 0; j < 3; j++) acc[v * 3 + j] += n[j];
+  }
+  for (let v = 0; v < nv; v++) {
+    if (mark[v] !== 1) continue;
+    const l = Math.hypot(acc[v * 3], acc[v * 3 + 1], acc[v * 3 + 2]);
+    // Keep the winding's sign agreeing with the field normal.
+    const s = acc[v * 3] * nor[v * 3] + acc[v * 3 + 1] * nor[v * 3 + 1] + acc[v * 3 + 2] * nor[v * 3 + 2] < 0 ? -1 : 1;
+    if (l > 0) for (let j = 0; j < 3; j++) nor[v * 3 + j] = (s * acc[v * 3 + j]) / l;
+  }
 }

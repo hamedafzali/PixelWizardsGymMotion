@@ -702,6 +702,9 @@ function elbow(p: Params): Motion {
   const from = num(p, "from", 8);
   const to = num(p, "to", 135);
   const together = bool(p, "together", false);
+  // Carrying angle: the extended forearm angles out from the upper arm and
+  // folds back into line as the elbow bends.
+  const carry = rad(num(p, "carry", together ? 0 : 13));
   const b = base(posture, num(p, "lean", 0));
   const f = frameOf(b.torso);
   const keys = sweep(7, (t) => {
@@ -715,7 +718,8 @@ function elbow(p: Params): Motion {
       const perp = comb([f.fwd, Math.cos(ua)], [f.up, Math.sin(ua)]);
       const uaDir = norm(comb([inPlane, Math.cos(out)], [f.left, s * Math.sin(out)]));
       const el = add(sh, mul(uaDir, BODY.upperArm));
-      let hand = add(el, mul(comb([inPlane, Math.cos(fl)], [perp, Math.sin(fl)]), BODY.forearm));
+      const flare = Math.sin(carry) * Math.max(0, Math.cos(fl));
+      let hand = add(el, mul(norm(comb([inPlane, Math.cos(fl)], [perp, Math.sin(fl)], [f.left, s * flare])), BODY.forearm));
       if (together) hand = add(hand, mul(f.left, -s * (Math.abs(sub(hand, el)[0]) * 0 + BODY.shoulderHalf - 0.05)));
       hands.push(hand);
       poles.push(together ? comb([sub(el, mid(sh, hand)), 1], [f.left, s * 0.3]) : through(el, sh, hand));

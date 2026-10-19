@@ -3,6 +3,7 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { anchorPoint, type Skeleton } from "../rig.js";
 import type { Part, V3 } from "../types.js";
 import { add, mid, mul, norm, rad, sub } from "../vec.js";
+import { surfaceMaps } from "./textures.js";
 
 // Gym equipment built from data. Every part is assembled once from a few
 // shapes (rounded steel tube, upholstered pad, chrome rod, rubber plate) and
@@ -10,13 +11,16 @@ import { add, mid, mul, norm, rad, sub } from "../vec.js";
 // anchor, and weight stacks rise with the rep. No meshes are created per frame.
 
 export const PALETTE = {
-  frame: "#3A4352",
-  shroud: "#262D38",
-  pad: "#1B2029",
+  frame: "#8E97A6",
+  shroud: "#2A303A",
+  pad: "#17191E",
+  welt: "#30353F",
+  board: "#22262D",
   chrome: "#D5DBE5",
-  plate: "#14181F",
-  grip: "#0F1217",
-  cable: "#0C0F14",
+  plate: "#1A1D23",
+  grip: "#141619",
+  cable: "#1E2228",
+  cap: "#0D0F12",
   accent: "#C3E201",
   band: "#FF6B57",
   floor: "#141B25",
@@ -42,21 +46,32 @@ const std = (color: string, o: Partial<THREE.MeshStandardMaterialParameters> = {
 /** Shared by every part. Created on first use so the module loads without WebGL. */
 let mats: ReturnType<typeof makeMaterials> | null = null;
 function makeMaterials() {
+  const maps = surfaceMaps();
+  const n = (s: number) => new THREE.Vector2(s, s);
   return {
-    frame: std(PALETTE.frame, { metalness: 0.55, roughness: 0.42 }),
-    shroud: std(PALETTE.shroud, { metalness: 0.3, roughness: 0.55 }),
+    // Satin powder-coated steel with a faint orange-peel ripple.
+    frame: std(PALETTE.frame, { metalness: 0.5, roughness: 0.46, normalMap: maps.powder, normalScale: n(0.08) }),
+    shroud: std(PALETTE.shroud, { metalness: 0.1, roughness: 0.5, normalMap: maps.rubber, normalScale: n(0.05) }),
+    // Vinyl upholstery: pebbled grain and a soft sheen at grazing angles.
     pad: new THREE.MeshPhysicalMaterial({
       color: PALETTE.pad,
-      roughness: 0.82,
+      roughness: 0.62,
       metalness: 0,
-      sheen: 0.4,
-      sheenRoughness: 0.5,
-      sheenColor: new THREE.Color("#5A6680"),
+      normalMap: maps.leather,
+      normalScale: n(0.35),
+      sheen: 0.5,
+      sheenRoughness: 0.45,
+      sheenColor: new THREE.Color("#6B7590"),
+      clearcoat: 0.15,
+      clearcoatRoughness: 0.55,
     }),
-    chrome: std(PALETTE.chrome, { metalness: 1, roughness: 0.18 }),
-    plate: std(PALETTE.plate, { metalness: 0.2, roughness: 0.62 }),
-    grip: std(PALETTE.grip, { roughness: 0.95 }),
-    cable: std(PALETTE.cable, { metalness: 0.4, roughness: 0.45 }),
+    welt: std(PALETTE.welt, { roughness: 0.55 }),
+    board: std(PALETTE.board, { roughness: 0.8 }),
+    chrome: std(PALETTE.chrome, { metalness: 1, roughness: 0.14 }),
+    plate: std(PALETTE.plate, { metalness: 0, roughness: 0.72, normalMap: maps.rubber, normalScale: n(0.25) }),
+    grip: std(PALETTE.grip, { roughness: 0.9, normalMap: maps.rubber, normalScale: n(0.4) }),
+    cable: std(PALETTE.cable, { metalness: 0.3, roughness: 0.4 }),
+    cap: std(PALETTE.cap, { roughness: 0.5 }),
     accent: std(PALETTE.accent, { emissive: PALETTE.accent, emissiveIntensity: 0.35, roughness: 0.4 }),
     band: std(PALETTE.band, { roughness: 0.7 }),
   };
@@ -140,7 +155,40 @@ const xRod = (len: number, r: number, mat: THREE.Material, geo = G().cyl) => {
 /** Upright from the floor with a foot plate. */
 function post(x: number, z: number, h: number, w = 0.06, mat = M().frame) {
   const g = new THREE.Group();
-  g.add(beam([x, 0, z], [x, h, z], w, mat), rbox([x, 0.012, z], [w * 2.2, 0.024, w * 2.2], mat, 0, 0.006));
+  const f = w * 2.2;
+  g.add(beam([x, 0, z], [x, h, z], w, mat), rbox([x, 0.008, z], [f, 0.016, f], mat, 0, 0.005));
+  // Plastic end cap, and four bolts through the foot plate.
+  g.add(rbox([x, h + 0.006, z], [w * 1.06, 0.014, w * 1.06], M().cap, 0, 0.004));
+  for (const [sx, sz] of [[1, 1], [1, -1], [-1, 1], [-1, -1]]) g.add(bolt([x + sx * f * 0.36, 0.016, z + sz * f * 0.36]));
+  return g;
+}
+/** A hex bolt head standing on a surface. */
+function bolt(at: V3, r = 0.008) {
+  const b = mesh(G().hex, M().chrome, false);
+  b.scale.set(r, r * 0.7, r);
+  b.position.set(at[0], at[1] + r * 0.35, at[2]);
+  return b;
+}
+/**
+ * Upholstered pad: a grained cushion with a sewn welt around its sides, on a
+ * thinner board. The thinnest axis of `size` is the thickness; the board sits
+ * on its negative side (under a seat, behind a back pad).
+ */
+function cushion(at: V3, size: V3, tilt = 0) {
+  const m = M();
+  const ax = size.indexOf(Math.min(...size));
+  const t = size[ax];
+  const g = new THREE.Group();
+  g.add(mesh(roundedGeo(size, t * 0.42), m.pad));
+  const welt = size.map((s, i) => (i === ax ? Math.max(0.006, t * 0.12) : s + 0.003)) as V3;
+  const w = mesh(roundedGeo(welt, 0.003), m.welt);
+  w.position.setComponent(ax, t * 0.12);
+  const board = size.map((s, i) => (i === ax ? 0.014 : s - 0.03)) as V3;
+  const b = mesh(roundedGeo(board, 0.004), m.board);
+  b.position.setComponent(ax, -t / 2 - 0.004);
+  g.add(w, b);
+  g.position.copy(v(at));
+  g.rotation.x = rad(tilt);
   return g;
 }
 const group = (...parts: THREE.Object3D[]) => {
@@ -261,10 +309,45 @@ function pulley(r = 0.05) {
 
 // ── Free weights ───────────────────────────────────────────────────────────
 
-/** Bumper plate with a chrome hub, axis along X. */
-function plateDisc(r: number, t: number) {
-  const g = group(xRod(t, r, M().plate, G().disc), xRod(t + 0.004, Math.min(0.05, r * 0.35), M().chrome, G().disc));
+const plateGeos = new Map<string, THREE.BufferGeometry>();
+/**
+ * Moulded rubber plate profile, turned on a lathe: a raised rim, a recessed
+ * face with a stepped ring, and a raised hub. Axis along Y, unit-free sizes.
+ */
+function plateGeo(r: number, t: number) {
+  const k = `${r.toFixed(3)}:${t.toFixed(3)}`;
+  let g = plateGeos.get(k);
+  if (!g) {
+    const h = t / 2;
+    const hub = Math.min(0.05, r * 0.32);
+    const e = Math.min(0.006, t * 0.12);
+    // (radius, height) from the bore outward over the top face, round the rim, and back under.
+    const top: [number, number][] = [
+      [0.026, h * 0.92],
+      [hub, h * 0.92],
+      [hub + 0.006, h * 0.72],
+      [r * 0.62, h * 0.72],
+      [r * 0.64, h * 0.8],
+      [r * 0.84, h * 0.8],
+      [r * 0.87, h * 0.72],
+      [r - 0.022, h * 0.72],
+      [r - 0.012, h],
+      [r - e, h],
+      [r, h - e],
+    ];
+    const pts = [...top, ...top.map(([x, y]) => [x, -y] as [number, number]).reverse()].map(([x, y]) => new THREE.Vector2(x, y));
+    g = new THREE.LatheGeometry(pts, 56);
+    g.computeVertexNormals();
+    plateGeos.set(k, g);
+  }
   return g;
+}
+
+/** Bumper plate with a chrome bore sleeve, axis along X. */
+function plateDisc(r: number, t: number) {
+  const p = mesh(plateGeo(r, t), M().plate);
+  p.rotation.z = Math.PI / 2;
+  return group(p, xRod(t + 0.004, 0.03, M().chrome, G().disc));
 }
 
 function barbell(style: "straight" | "ez" | "trap", length: number, plates: boolean): Built {
@@ -331,13 +414,15 @@ function barbell(style: "straight" | "ez" | "trap", length: number, plates: bool
 function dumbbell(to: "handL" | "handR" | "hands"): Built {
   const m = M();
   const g = new THREE.Group();
-  g.add(xRod(0.13, 0.016, m.grip));
+  g.add(xRod(0.13, 0.016, m.chrome));
   for (const s of [1, -1]) {
     const h = xRod(0.07, 0.058, m.plate, G().hex);
     h.position.x = s * 0.1;
+    const collar = xRod(0.008, 0.026, m.chrome, G().disc);
+    collar.position.x = s * 0.063;
     const cap = xRod(0.012, 0.03, m.chrome, G().disc);
     cap.position.x = s * 0.141;
-    g.add(h, cap);
+    g.add(h, collar, cap);
   }
   return {
     object: g,
@@ -461,8 +546,15 @@ function cable(p: Part & { kind: "cable" }): Built {
     g.add(stack.object);
     colTop = [cx, top + 0.06, cz];
     if (from[1] > 1.2) {
-      g.add(beam([cx, top + 0.06, cz], [from[0], top + 0.06, from[2]], 0.07));
-      g.add(beam([from[0], top + 0.06, from[2]], [from[0], from[1] + 0.05, from[2]], 0.035));
+      // A curved gooseneck from the column top out over the user to the pulley.
+      const curve = new THREE.CubicBezierCurve3(
+        v([cx, top + 0.06, cz]),
+        v([cx + (from[0] - cx) * 0.55, top + 0.08, cz + (from[2] - cz) * 0.55]),
+        v([from[0], top + 0.06, from[2]]),
+        v([from[0], from[1] + 0.07, from[2]]),
+      );
+      g.add(mesh(new THREE.TubeGeometry(curve, 40, 0.036, 16), m.frame));
+      g.add(rbox([cx, top + 0.06, cz], [0.1, 0.1, 0.1], m.frame, 0, 0.02));
       topWheel = pulley(0.055);
       topWheel.object.position.copy(v(colTop));
       topWheel.orient([from[0] - cx, 0, from[2] - cz], [0, -1, 0]);
@@ -498,7 +590,7 @@ function cable(p: Part & { kind: "cable" }): Built {
 function lever(p: Part & { kind: "lever" }): Built {
   const m = M();
   const g = new THREE.Group();
-  const arm = mesh(G().cyl, m.frame);
+  const arm = mesh(roundedGeo([0.05, 1, 0.036], 0.012), m.frame);
   const hub = group(xRod(0.07, 0.045, m.frame, G().disc), xRod(0.08, 0.02, m.chrome, G().disc));
   hub.position.copy(v(p.pivot));
   g.add(arm, hub);
@@ -520,7 +612,7 @@ function lever(p: Part & { kind: "lever" }): Built {
     object: g,
     update(sk) {
       const at = add(anchorPoint(sk, p.to), p.offset ?? [0, 0, 0]);
-      span(arm, p.pivot, at, 0.022);
+      span(arm, p.pivot, at, 1);
       if (!tip) return;
       if (end === "handle" && !width) span(tip, add(at, [0, -0.07, 0]), add(at, [0, 0.07, 0]), 0.019);
       else tip.position.copy(v(at));
@@ -548,7 +640,7 @@ function sled(p: Part & { kind: "sled" }): Built {
   let built = false;
 
   const carriage = new THREE.Group();
-  carriage.add(rbox([0, 0, 0], [0.62, 0.5, 0.04], m.frame, 0, 0.015));
+  carriage.add(rbox([0, 0, 0], [0.62, 0.5, 0.04], m.shroud, 0, 0.015)); // moulded back panel
   carriage.add(rbox([0, 0, -0.03], [0.58, 0.46, 0.014], m.grip, 0, 0.006)); // non-slip foot plate
   carriage.add(rbox([0, -0.12, 0.08], [0.5, 0.06, 0.14], m.frame, 0, 0.01));
   for (const s of [1, -1]) {
@@ -595,11 +687,11 @@ function bench(p: Part & { kind: "bench" }): Built {
   const inc = rad(p.incline ?? 0);
   const L = p.length ?? 0.95;
   const t = 0.075;
-  g.add(rbox([at[0], at[1] - t / 2, at[2] + 0.18], [0.3, t, 0.38], m.pad, 0, 0.03));
+  g.add(cushion([at[0], at[1] - t / 2, at[2] + 0.18], [0.3, t, 0.38]));
   const d: V3 = [0, Math.sin(inc), -Math.cos(inc)];
   const n: V3 = [0, Math.cos(inc), Math.sin(inc)];
   const c = add(add(at, mul(d, L / 2)), mul(n, -t / 2));
-  const back = rbox(c, [0.3, t, L], m.pad, 0, 0.03);
+  const back = cushion(c, [0.3, t, L]);
   back.rotation.x = inc;
   g.add(back);
   // Frame: a spine under the pads, legs with wide feet at both ends.
@@ -619,14 +711,14 @@ function seat(p: Part & { kind: "seat" }): Built {
   const g = new THREE.Group();
   const at = p.at;
   const w = p.width ?? 0.42;
-  g.add(rbox([at[0], at[1] - 0.04, at[2] + 0.08], [w, 0.08, 0.4], m.pad, 0, 0.03));
+  g.add(cushion([at[0], at[1] - 0.04, at[2] + 0.08], [w, 0.08, 0.4]));
   g.add(beam([at[0], at[1] - 0.08, at[2] + 0.05], [at[0], 0.04, at[2] + 0.05], 0.07));
   g.add(rbox([at[0], 0.025, at[2]], [0.5, 0.05, 0.7], m.frame, 0, 0.012));
   if (p.back !== undefined) {
     const b = rad(p.back);
     const up: V3 = [0, Math.cos(b), -Math.sin(b)];
     const c = add([at[0], at[1], at[2] - 0.15], mul(up, 0.34));
-    const pad = rbox(c, [w, 0.62, 0.08], m.pad, 0, 0.03);
+    const pad = cushion(c, [w, 0.62, 0.08]);
     pad.rotation.x = -b;
     g.add(pad);
     g.add(beam([at[0], at[1] - 0.08, at[2] - 0.05], add(c, mul([0, Math.sin(b), Math.cos(b)], -0.07)), 0.05));
@@ -638,7 +730,7 @@ function pad(p: Part & { kind: "pad" }): Built {
   const m = M();
   const o = p.roller
     ? group(xRod(p.size[0], p.size[1] / 2 + 0.012, m.pad), xRod(p.size[0] + 0.02, 0.012, m.chrome))
-    : mesh(roundedGeo(p.size, Math.min(...p.size) * 0.35), m.pad);
+    : cushion([0, 0, 0], p.size);
   return {
     object: o,
     update(sk) {

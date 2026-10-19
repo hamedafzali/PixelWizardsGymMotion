@@ -41,12 +41,30 @@ export function framingOf(m: Motion): Framing {
   return { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(box.getSize(p).length() / 2, 0.6) };
 }
 
+/**
+ * Grows a framing to show the equipment around the body, up to 0.8 m
+ * past the poses: enough for a bench end or a pulley tower, not a whole rig.
+ */
+function withEquipment(f: Framing, parts: Built[]): Framing {
+  const box = new THREE.Box3().setFromCenterAndSize(f.centre, new THREE.Vector3().setScalar((f.radius * 2) / Math.sqrt(3)));
+  const reach = box.clone().expandByScalar(0.8);
+  const eq = new THREE.Box3();
+  for (const p of parts) {
+    p.object.updateMatrixWorld(true);
+    eq.expandByObject(p.object);
+  }
+  if (eq.isEmpty()) return f;
+  box.union(eq.intersect(reach));
+  const size = box.getSize(new THREE.Vector3());
+  return { centre: box.getCenter(new THREE.Vector3()), radius: Math.max(f.radius, size.length() / 2) };
+}
+
 export class GymScene {
   readonly root = new THREE.Group();
   readonly spec: MotionSpec;
   readonly motion: Motion;
   readonly equipment: Part[];
-  readonly framing: Framing;
+  framing: Framing;
   /** Seconds into the animation. */
   time = 0;
   /** The last sampled frame and skeleton. */
@@ -68,6 +86,7 @@ export class GymScene {
     this.load = new Spring(loadSpring);
     this.root.add(this.figure.group, ...this.parts.map((p) => p.object));
     this.seek(0);
+    this.framing = withEquipment(this.framing, this.parts);
   }
 
   /** Advance the clock by `dt` seconds (scaled by `speed`) and pose everything. */

@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { motionSpecFor } from "../catalog.js";
 import { highlightFor, type Highlight } from "../muscles.js";
 import { Spring } from "../spring.js";
@@ -7,6 +6,7 @@ import type { Frame } from "../timeline.js";
 import type { ExerciseInput, MotionSpec } from "../types.js";
 import { PALETTE } from "./equipment.js";
 import { GymScene } from "./scene.js";
+import { floorTexture } from "./textures.js";
 
 // A ready-made viewer: renderer, studio lighting, floor and camera around a
 // GymScene, rendering only while it is on screen and something moves.
@@ -70,6 +70,8 @@ export class GymViewer {
   private cue = "";
   private drag: { x: number; yaw: number; id: number } | null = null;
   private cleanups: (() => void)[] = [];
+  private key!: THREE.DirectionalLight;
+  private fog!: THREE.Fog;
 
   constructor(
     readonly container: HTMLElement,
@@ -89,6 +91,7 @@ export class GymViewer {
     this.renderer.setClearColor(options.background ?? PALETTE.background);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 1.15;
     this.renderer.shadowMap.enabled = options.shadows ?? true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -117,6 +120,7 @@ export class GymViewer {
       "aria-label",
       label ?? `Animated 3D guide showing how to do ${name}${s.device ? ` on the ${s.device.toLowerCase()}` : ""}.`,
     );
+    this.fitShadow();
     this.setView(this.view, true);
     this.cue = "";
     this.wake();
@@ -190,29 +194,60 @@ export class GymViewer {
 
   private lights() {
     const s = this.three;
-    s.add(new THREE.HemisphereLight("#E4E8FF", "#1E2448", 0.4));
-    const key = new THREE.DirectionalLight("#ffffff", 2.2);
-    key.position.set(-2.6, 4, 2.2);
+    const bg = this.opts.background ?? PALETTE.background;
+    s.add(new THREE.HemisphereLight("#E4E8FF", "#1E2448", 0.25));
+    const key = new THREE.DirectionalLight("#ffffff", 2.1);
     key.castShadow = true;
-    key.shadow.mapSize.set(1024, 1024);
-    key.shadow.radius = 4;
-    key.shadow.bias = -0.0004;
-    Object.assign(key.shadow.camera, { left: -2.5, right: 2.5, top: 2.5, bottom: -2.5 });
-    const rim = new THREE.DirectionalLight("#B8C4FF", 0.7);
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.radius = 5;
+    key.shadow.bias = -0.0003;
+    key.shadow.normalBias = 0.01;
+    this.key = key;
+    const rim = new THREE.DirectionalLight("#B8C4FF", 0.8);
     rim.position.set(2.8, 2.2, -2.6);
-    s.add(key, rim);
+    s.add(key, key.target, rim);
+
+    // Rubber tile floor that fades into the background instead of ending.
+    const tex = floorTexture();
+    tex.repeat.set(16, 16);
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(2.6, 64),
-      new THREE.MeshStandardMaterial({ color: PALETTE.floor, roughness: 0.95 }),
+      new THREE.PlaneGeometry(16, 16),
+      new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0, envMapIntensity: 0.4 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     s.add(floor);
-    // Soft studio reflections so the body and chrome read as rounded, not flat.
+    this.fog = new THREE.Fog(bg, 4, 10);
+    s.fog = this.fog;
+    this.cleanups.push(() => {
+      tex.dispose();
+      floor.geometry.dispose();
+      (floor.material as THREE.Material).dispose();
+    });
+
+    // Studio reflections: softbox strips overhead and a key panel, so the
+    // body, chrome and powder coat read as rounded, not flat.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    s.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    s.environmentIntensity = 0.25;
+    const studio = studioScene();
+    s.environment = pmrem.fromScene(studio, 0.03).texture;
+    s.environmentIntensity = 0.55;
+    studio.traverse((o) => {
+      if (o instanceof THREE.Mesh) {
+        o.geometry.dispose();
+        (o.material as THREE.Material).dispose();
+      }
+    });
     pmrem.dispose();
+  }
+
+  /** Keeps the key light's shadow tight around the exercise. */
+  private fitShadow() {
+    const { centre, radius } = this.scene.framing;
+    const r = radius + 0.7;
+    this.key.target.position.copy(centre);
+    this.key.position.copy(centre).add(new THREE.Vector3(-2.6, 4, 2.2));
+    Object.assign(this.key.shadow.camera, { left: -r, right: r, top: r, bottom: -r, near: 0.5, far: 12 });
+    this.key.shadow.camera.updateProjectionMatrix();
   }
 
   private placeCamera() {
@@ -230,6 +265,9 @@ export class GymViewer {
       centre.z + d * Math.cos(y) * Math.cos(pitch),
     );
     this.camera.lookAt(centre);
+    // The floor fades out a little beyond the exercise.
+    this.fog.near = d + radius * 0.6;
+    this.fog.far = d + radius * 0.6 + 6;
   }
 
   private wake() {
@@ -314,4 +352,23 @@ export class GymViewer {
       c.removeEventListener("pointercancel", up);
     });
   }
+}
+
+/** A dim room lit by softboxes, for image-based lighting. */
+function studioScene() {
+  const scene = new THREE.Scene();
+  const room = new THREE.Mesh(new THREE.BoxGeometry(14, 7, 14), new THREE.MeshBasicMaterial({ color: "#1A1F28", side: THREE.BackSide }));
+  room.position.y = 3.5;
+  scene.add(room);
+  const panel = (w: number, h: number, at: [number, number, number], power: number, tint = "#ffffff") => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(tint).multiplyScalar(power), side: THREE.DoubleSide }));
+    m.position.set(...at);
+    m.lookAt(0, 1, 0);
+    scene.add(m);
+  };
+  for (const x of [-2, 0, 2]) panel(0.5, 6, [x, 6.8, 0], 3); // overhead strips
+  panel(3, 2.4, [-5, 3, 4], 6); // key softbox
+  panel(1, 4, [5.5, 2.6, -3.5], 4, "#C4CEFF"); // cool rim strip
+  panel(6, 1.2, [0, 1.2, -6.8], 0.8); // faint back wall bounce
+  return scene;
 }

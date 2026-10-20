@@ -71,6 +71,8 @@ export type Part =
   | { kind: "dumbbell"; to: "handL" | "handR" | "hands" }
   | { kind: "kettlebell"; to: Anchor; offset?: V3 }
   | { kind: "cable"; from: V3; to: Anchor; handle?: "bar" | "rope" | "single" | "none"; tower?: boolean }
+  /** Cable crossover frame bridging the tower at `from` and its mirror across x. */
+  | { kind: "crossover"; from: V3 }
   | { kind: "lever"; pivot: V3; to: Anchor; offset?: V3; end?: "handle" | "roller" | "pad" | "none"; width?: number }
   | { kind: "platform"; to: Anchor; /** plate normal tilt from vertical, degrees */ tilt: number; offset?: V3 }
   /** Plate-loaded sled on rails (leg press): the carriage rides with `to` along rails rising at `angle` degrees. */
@@ -81,6 +83,12 @@ export type Part =
   | { kind: "dipBars"; height: number; z?: number }
   | { kind: "band" }
   | { kind: "stack"; at: V3 }
+  /** Upholstered pad on a steel stand (chest pads, preacher and arm pads). */
+  | { kind: "padStand"; at: V3; size: V3; /** rotation about X in degrees */ tilt?: number }
+  /** Padded box bench, `size` overall with the top at at.y + size.y / 2. */
+  | { kind: "benchBox"; at: V3; size: V3 }
+  /** A machine frame built around its exercise's poses. */
+  | { kind: "station"; type: "tbar" | "hack" | "calf" | "seatedCalf" | "kickback" | "legCurl" | "hyper" | "hipThrust" | "rotary" | "captain" | "rowBench" }
   | { kind: "treadmill" }
   | { kind: "bike" }
   | { kind: "rower" }

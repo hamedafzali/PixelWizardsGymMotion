@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { EXERCISE_IDS, MOTIONS, solve } from "../dist/index.js";
+import { anchorPoint, EXERCISE_IDS, MOTIONS, solve } from "../dist/index.js";
 import { bodyReady, buildPart, GymScene, preloadBody } from "../dist/three/index.js";
 import { readFileSync } from "node:fs";
 
@@ -79,6 +79,43 @@ describe("three.js scene", () => {
         assert.ok(Math.hypot(centre.x, centre.z) > 0.6, `upright at ${centre.x.toFixed(2)},${centre.z.toFixed(2)}`);
       }
     });
+  });
+
+  it("builds every machine part kind", () => {
+    const sk = solve(resolveFirstKey("e-squat"));
+    const parts = [
+      { kind: "crossover", from: [1.15, 2.05, -0.1] },
+      { kind: "padStand", at: [0, 0.9, 0.3], size: [0.4, 0.05, 0.3], tilt: 30 },
+      { kind: "benchBox", at: [0, 0.45, -0.3], size: [0.4, 0.45, 0.4] },
+      ...["tbar", "hack", "calf", "seatedCalf", "kickback", "legCurl", "hyper", "hipThrust", "rotary", "captain", "rowBench"].map((type) => ({ kind: "station", type })),
+    ];
+    for (const part of parts) {
+      const built = buildPart(part);
+      for (let i = 0; i < 3; i++) built.update?.(sk, { load: i / 2 });
+      assert.ok(finiteGraph(built.object), `${part.type ?? part.kind} is finite`);
+      let meshes = 0;
+      built.object.traverse((c) => (meshes += c.isMesh ? 1 : 0));
+      assert.ok(meshes > 4, `${part.type ?? part.kind} has detail (${meshes} meshes)`);
+    }
+  });
+
+  it("keeps a bike's pedals under the feet", () => {
+    const built = buildPart({ kind: "bike" });
+    const scene = new GymScene({ spec: MOTIONS["e-bike"] });
+    for (let i = 0; i < 20; i++) scene.step(1 / 30);
+    built.update(scene.skeleton, { load: 0 });
+    built.object.updateMatrixWorld(true);
+    const feet = ["footL", "footR"].map((a) => new THREE.Vector3(...anchorPoint(scene.skeleton, a)));
+    const pedals = [];
+    built.object.traverse((c) => {
+      if (c.name === "bike:pedal") pedals.push(new THREE.Box3().setFromObject(c).getCenter(new THREE.Vector3()));
+    });
+    assert.equal(pedals.length, 2);
+    for (const f of feet) {
+      const d = Math.min(...pedals.map((p) => p.distanceTo(f)));
+      assert.ok(d < 0.15, `pedal ${d.toFixed(2)} m from a foot`);
+    }
+    scene.dispose();
   });
 
   it("holds a lat bar horizontal", () => {

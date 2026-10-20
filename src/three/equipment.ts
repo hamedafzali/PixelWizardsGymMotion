@@ -4,6 +4,8 @@ import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.j
 import { anchorPoint, type Skeleton } from "../rig.js";
 import type { Part, V3 } from "../types.js";
 import { add, mid, mul, norm, rad, sub } from "../vec.js";
+import { bike, elliptical, stairs, treadmill } from "./cardio.js";
+import { benchBox, padStand, station } from "./stations.js";
 import { labelTexture, repeated, surfaceMaps } from "./textures.js";
 
 // Gym equipment built from data. Every part is assembled once from a few
@@ -94,7 +96,7 @@ function makeMaterials() {
     band: std(PALETTE.band, { roughness: 0.7 }),
   };
 }
-const M = () => (mats ??= makeMaterials());
+export const M = () => (mats ??= makeMaterials());
 export type Tone = "frame" | "pad" | "metal";
 const tone = (t: Tone) => (t === "metal" ? M().chrome : t === "pad" ? M().pad : M().frame);
 
@@ -108,13 +110,13 @@ function makeGeometries() {
     box: new THREE.BoxGeometry(1, 1, 1),
   };
 }
-const G = () => (geos ??= makeGeometries());
+export const G = () => (geos ??= makeGeometries());
 
 /** Physical size of one knurl tile (16 diamonds): about 2.5 mm pitch. */
 const KNURL_TILE = 0.04;
 const knurlGeos = new Map<string, THREE.BufferGeometry>();
 /** Knurled steel section along X, centred on the origin. */
-function knurledRod(len: number, r: number) {
+export function knurledRod(len: number, r: number) {
   const k = `${len.toFixed(3)}:${r.toFixed(4)}`;
   let g = knurlGeos.get(k);
   if (!g) {
@@ -130,7 +132,7 @@ function knurledRod(len: number, r: number) {
 
 const decalMats = new Map<string, THREE.Material>();
 /** Painted weight numerals: a flat decal facing +Z, `w` metres wide. */
-function label(text: string, w: number, color = "#D6DBE3") {
+export function label(text: string, w: number, color = "#D6DBE3") {
   const k = `${text}:${color}`;
   let mat = decalMats.get(k);
   if (!mat) {
@@ -193,7 +195,7 @@ function hexHeadGeo(r: number, len: number) {
 
 const rounded = new Map<string, THREE.BufferGeometry>();
 /** Rounded box geometry, cached per size: steel tube and upholstery corners. */
-function roundedGeo(size: V3, r: number) {
+export function roundedGeo(size: V3, r: number) {
   const k = `${size.map((x) => x.toFixed(3)).join(",")}:${r.toFixed(3)}`;
   let g = rounded.get(k);
   if (!g) {
@@ -204,40 +206,40 @@ function roundedGeo(size: V3, r: number) {
   return g;
 }
 
-function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, cast = true) {
+export function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, cast = true) {
   const m = new THREE.Mesh(geo, mat);
   m.castShadow = cast;
   m.receiveShadow = true;
   return m;
 }
 
-const v = (p: V3) => new THREE.Vector3(p[0], p[1], p[2]);
+export const v = (p: V3) => new THREE.Vector3(p[0], p[1], p[2]);
 const Y = new THREE.Vector3(0, 1, 0);
 const X = new THREE.Vector3(1, 0, 0);
 const tmp = new THREE.Vector3();
 
 /** Places a unit Y-cylinder between two points. */
-function span(m: THREE.Object3D, a: V3, b: V3, r: number) {
+export function span(m: THREE.Object3D, a: V3, b: V3, r: number) {
   const d = tmp.set(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
   const l = d.length();
   m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
   if (l > 1e-6) m.quaternion.setFromUnitVectors(Y, d.divideScalar(l));
   m.scale.set(r, Math.max(l, 1e-4), r);
 }
-const rod = (a: V3, b: V3, r: number, mat: THREE.Material) => {
+export const rod = (a: V3, b: V3, r: number, mat: THREE.Material) => {
   const m = mesh(G().cyl, mat);
   span(m, a, b, r);
   return m;
 };
 /** Rounded box at a point, optionally turned about X (degrees). */
-function rbox(at: V3, size: V3, mat: THREE.Material, tilt = 0, r = 0.012) {
+export function rbox(at: V3, size: V3, mat: THREE.Material, tilt = 0, r = 0.012) {
   const m = mesh(roundedGeo(size, r), mat);
   m.position.copy(v(at));
   m.rotation.x = rad(tilt);
   return m;
 }
 /** Square steel tube between two points (frame members). */
-function beam(a: V3, b: V3, w = 0.06, mat = M().frame) {
+export function beam(a: V3, b: V3, w = 0.06, mat = M().frame) {
   const l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
   const m = mesh(roundedGeo([w, Math.max(l, 1e-3), w], w * 0.25), mat);
   m.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
@@ -245,14 +247,14 @@ function beam(a: V3, b: V3, w = 0.06, mat = M().frame) {
   return m;
 }
 /** Cylinder whose axis runs along X (bars, rollers, plates). */
-const xRod = (len: number, r: number, mat: THREE.Material, geo = G().cyl) => {
+export const xRod = (len: number, r: number, mat: THREE.Material, geo = G().cyl) => {
   const m = mesh(geo, mat);
   m.rotation.z = Math.PI / 2;
   m.scale.set(r, len, r);
   return m;
 };
 /** Upright from the floor with a foot plate. */
-function post(x: number, z: number, h: number, w = 0.06, mat = M().frame) {
+export function post(x: number, z: number, h: number, w = 0.06, mat = M().frame) {
   const g = new THREE.Group();
   const f = w * 2.2;
   g.add(beam([x, 0, z], [x, h, z], w, mat), rbox([x, 0.008, z], [f, 0.016, f], mat, 0, 0.005));
@@ -262,7 +264,7 @@ function post(x: number, z: number, h: number, w = 0.06, mat = M().frame) {
   return g;
 }
 /** A hex bolt head standing on a surface. */
-function bolt(at: V3, r = 0.008) {
+export function bolt(at: V3, r = 0.008) {
   const b = mesh(G().hex, M().chrome, false);
   b.scale.set(r, r * 0.7, r);
   b.position.set(at[0], at[1] + r * 0.35, at[2]);
@@ -273,7 +275,7 @@ function bolt(at: V3, r = 0.008) {
  * thinner board. The thinnest axis of `size` is the thickness; the board sits
  * on its negative side (under a seat, behind a back pad).
  */
-function cushion(at: V3, size: V3, tilt = 0) {
+export function cushion(at: V3, size: V3, tilt = 0) {
   const m = M();
   const ax = size.indexOf(Math.min(...size));
   const t = size[ax];
@@ -290,13 +292,13 @@ function cushion(at: V3, size: V3, tilt = 0) {
   g.rotation.x = rad(tilt);
   return g;
 }
-const group = (...parts: THREE.Object3D[]) => {
+export const group = (...parts: THREE.Object3D[]) => {
   const g = new THREE.Group();
   g.add(...parts);
   return g;
 };
 const turnTowardsOrigin = (x: number, z: number) => Math.atan2(-x, -z);
-const yawOf = (sk: Skeleton) => Math.atan2(sk.frame.fwd[0], sk.frame.fwd[2]);
+export const yawOf = (sk: Skeleton) => Math.atan2(sk.frame.fwd[0], sk.frame.fwd[2]);
 
 // ── Weight stack ───────────────────────────────────────────────────────────
 
@@ -372,7 +374,7 @@ const PLATES = 12;
 const PINNED = 5;
 const STACK_TRAVEL = 0.3;
 
-interface Stack {
+export interface Stack {
   object: THREE.Group;
   /** Raises the selected plates by `load` × travel. */
   lift(load: number): void;
@@ -384,7 +386,7 @@ interface Stack {
  * Selectorised weight stack: guide rods, a column of plates, a lime selector
  * pin, and the top plates riding up on the lift rod as the load rises.
  */
-function weightStack(at: V3, height = 1.9, facing = turnTowardsOrigin(at[0], at[2])): Stack {
+export function weightStack(at: V3, height = 1.9, facing = turnTowardsOrigin(at[0], at[2])): Stack {
   const g = new THREE.Group();
   g.name = "stack";
   g.position.set(at[0], 0, at[2]);
@@ -400,6 +402,17 @@ function weightStack(at: V3, height = 1.9, facing = turnTowardsOrigin(at[0], at[
   g.add(rbox([0, height + 0.03, 0], [w + 0.16, 0.06, d], m.frame, 0, 0.012));
   // Rubber bumpers the stack lands on.
   for (const s of [1, -1]) g.add(rod([s * 0.095, 0.06, 0], [s * 0.095, 0.1, 0], 0.02, m.grip));
+  // Moulded shrouds on the sides and back, open at the front so the plates
+  // show, with a lime edge strip down each front corner.
+  const sh = height - 0.08;
+  for (const s of [1, -1]) {
+    g.add(rbox([s * 0.252, 0.08 + sh / 2, -0.01], [0.014, sh, 0.25], m.shroud, 0, 0.006));
+    g.add(rbox([s * 0.252, 0.08 + sh / 2, 0.116], [0.018, sh * 0.82, 0.008], m.accent, 0, 0.003));
+  }
+  // A rear brace and kick plate instead of a full back panel, so the plates
+  // read from behind too.
+  g.add(rbox([0, 0.2, -0.125], [0.5, 0.28, 0.012], m.shroud, 0, 0.005));
+  for (const y of [0.9, sh]) g.add(beam([0.25, y, -0.1], [-0.25, y, -0.1], 0.03));
 
   const plateGeo = stackPlateGeo(w, PLATE_T, d);
   const y0 = 0.1 + PLATE_T / 2;
@@ -461,7 +474,7 @@ function weightStack(at: V3, height = 1.9, facing = turnTowardsOrigin(at[0], at[
 }
 
 /** A pulley wheel at a point; `orient` turns it into the plane of the cable. */
-function pulley(r = 0.05) {
+export function pulley(r = 0.05) {
   const m = M();
   const g = new THREE.Group();
   const wheel = mesh(pulleyGeo(r), m.steel);
@@ -527,7 +540,7 @@ function plateGeo(r: number, t: number) {
 }
 
 /** Bumper plate with a chrome bore sleeve, axis along X, its weight moulded on both faces. */
-function plateDisc(r: number, t: number, kg: number) {
+export function plateDisc(r: number, t: number, kg: number) {
   const p = mesh(plateGeo(r, t), M().plate);
   p.rotation.z = Math.PI / 2;
   const g = group(p, xRod(t + 0.004, 0.03, M().chrome, G().disc));
@@ -784,6 +797,38 @@ function cableHandle(kind: "bar" | "rope" | "single" | "none") {
   };
 }
 
+/** Where a cable tower stands for a pulley at `from`. */
+export interface TowerLayout {
+  /** High pulley close over the user: a gooseneck boom from the column. */
+  boom: boolean;
+  /** Unit vector from the user out towards the tower (XZ). */
+  out: V3;
+  /** Foot of the adjustable rail (rail mode). */
+  rail: V3;
+  /** Centre of the weight stack. */
+  col: V3;
+  /** Height of the column top. */
+  top: number;
+}
+
+export function towerLayout(from: V3): TowerLayout {
+  let ox = from[0];
+  let oz = from[2];
+  const h = Math.hypot(ox, oz);
+  if (h < 0.05) [ox, oz] = [0, 1];
+  else [ox, oz] = [ox / h, oz / h];
+  const boom = from[1] > 1.2 && h < 0.66;
+  const top = Math.max(2.15, from[1] + 0.15);
+  if (boom) {
+    const reach = Math.max(h + 0.14, 0.8);
+    return { boom, out: [ox, 0, oz], rail: [ox * reach, 0, oz * reach], col: [ox * reach, 0, oz * reach], top };
+  }
+  // The pulley rides a carriage 0.1 m in front of the rail; the stack stands behind it.
+  const rr = h + 0.1;
+  const cr = rr + 0.22;
+  return { boom, out: [ox, 0, oz], rail: [ox * rr, 0, oz * rr], col: [ox * cr, 0, oz * cr], top };
+}
+
 function cable(p: Part & { kind: "cable" }): Built {
   const m = M();
   const g = new THREE.Group();
@@ -796,22 +841,22 @@ function cable(p: Part & { kind: "cable" }): Built {
 
   let stack: Stack | null = null;
   let up: THREE.Mesh | null = null;
-  let topWheel: ReturnType<typeof pulley> | null = null;
   let colTop: V3 = from;
+  /** Where the cable leaves the swivel pulley, away from the handle. */
+  let away: V3 = from;
   if (p.tower) {
-    // The column stands away from the user, beyond reach; a boom carries
-    // high pulleys back over them (lat pulldown), low ones sit at its foot.
-    const out = new THREE.Vector3(from[0], 0, from[2]);
-    if (out.length() < 0.05) out.set(0, 0, 1);
-    out.normalize();
-    const reach = Math.max(Math.hypot(from[0], from[2]) + 0.14, from[1] > 1.2 ? 0.8 : 0);
-    const cx = out.x * reach;
-    const cz = out.z * reach;
-    const top = Math.max(2.15, from[1] + 0.12);
-    stack = weightStack([cx, 0, cz], top - 0.06);
+    const L = towerLayout(from);
+    const [cx, , cz] = L.col;
+    const top = L.top;
+    stack = weightStack(L.col, top - 0.06);
     g.add(stack.object);
     colTop = [cx, top + 0.06, cz];
-    if (from[1] > 1.2) {
+    const colWheel = pulley(0.055);
+    colWheel.object.position.copy(v(colTop));
+    g.add(colWheel.object);
+    up = mesh(G().cyl, m.cable, false);
+    g.add(up);
+    if (L.boom) {
       // A curved gooseneck from the column top out over the user to the pulley.
       const curve = new THREE.CubicBezierCurve3(
         v([cx, top + 0.06, cz]),
@@ -821,19 +866,55 @@ function cable(p: Part & { kind: "cable" }): Built {
       );
       g.add(mesh(new THREE.TubeGeometry(curve, 40, 0.036, 16), m.frame));
       g.add(rbox([cx, top + 0.06, cz], [0.1, 0.1, 0.1], m.frame, 0, 0.02));
-      topWheel = pulley(0.055);
-      topWheel.object.position.copy(v(colTop));
-      topWheel.orient([from[0] - cx, 0, from[2] - cz], [0, -1, 0]);
-      g.add(topWheel.object);
-      up = mesh(G().cyl, m.cable, false);
-      g.add(up, rod(from, colTop, 0.006, m.cable));
+      colWheel.orient([from[0] - cx, 0, from[2] - cz], [0, -1, 0]);
+      g.add(rod(from, colTop, 0.006, m.cable));
+      away = colTop;
     } else {
-      // Low pulley: the cable runs into the column at the pulley's height.
-      g.add(rod(from, [cx, from[1], cz], 0.006, m.cable));
-      g.add(beam([cx - out.z * 0.0, from[1], cz], from, 0.05));
-      up = mesh(G().cyl, m.cable, false);
-      g.add(up);
-      colTop = [cx, from[1], cz];
+      // Functional-trainer column: a pin-holed rail with a sliding carriage
+      // that carries a swivel pulley, a head pulley at the top, and a
+      // bracket across to the stack.
+      const [rx, , rz] = L.rail;
+      const [ox, , oz] = L.out;
+      const facing = turnTowardsOrigin(rx, rz);
+      g.add(post(rx, rz, top + 0.1, 0.075));
+      const side: V3 = [oz, 0, -ox];
+      g.add(beam([rx + side[0] * 0.3, 0.035, rz + side[2] * 0.3], [rx - side[0] * 0.3, 0.035, rz - side[2] * 0.3], 0.07));
+      g.add(beam([rx, 0.035, rz], [cx, 0.035, cz], 0.07));
+      const toUser = new THREE.Vector3(-ox, 0, -oz);
+      for (let y = 0.24; y < top - 0.05; y += 0.08) {
+        const hole = mesh(G().disc, m.cap, false);
+        hole.quaternion.setFromUnitVectors(Y, toUser);
+        hole.scale.set(0.009, 0.004, 0.009);
+        hole.position.set(rx - ox * 0.0375, y, rz - oz * 0.0375);
+        g.add(hole);
+      }
+      const car = new THREE.Group();
+      const cy = Math.max(from[1] + 0.02, 0.15);
+      car.position.set(rx, cy, rz);
+      car.rotation.y = facing;
+      car.add(rbox([0, 0, 0], [0.13, 0.2, 0.115], m.shroud, 0, 0.012));
+      car.add(rbox([0, 0, 0.058], [0.1, 0.16, 0.006], m.frame, 0, 0.003));
+      // Pop-pin with a lime knob on the side, and the swivel stem.
+      const pin = mesh(G().cyl, m.chrome);
+      pin.rotation.z = Math.PI / 2;
+      pin.scale.set(0.007, 0.05, 0.007);
+      pin.position.set(0.085, 0.05, 0);
+      const knob = mesh(G().sphere, m.accent);
+      knob.scale.set(0.02, 0.016, 0.016);
+      knob.position.set(0.115, 0.05, 0);
+      car.add(pin, knob, rod([0, from[1] - cy, 0.055], [0, from[1] - cy, 0.07], 0.016, m.steel));
+      g.add(car);
+      const head: V3 = [from[0], top, from[2]];
+      const headWheel = pulley(0.05);
+      headWheel.object.position.copy(v(head));
+      headWheel.orient([0, -1, 0], [ox, 0, oz]);
+      colWheel.orient([-ox, 0, -oz], [0, -1, 0]);
+      g.add(headWheel.object);
+      g.add(beam([head[0], top + 0.08, head[2]], [cx, top + 0.08, cz], 0.08));
+      g.add(rbox([from[0], top + 0.03, from[2]], [0.06, 0.06, 0.06], m.frame, 0, 0.01));
+      g.add(rod([from[0], from[1] + 0.05, from[2]], [head[0], head[1] - 0.05, head[2]], 0.006, m.cable));
+      g.add(rod([head[0], head[1] + 0.05, head[2]], [cx, top + 0.06, cz], 0.006, m.cable));
+      away = head;
     }
   }
   return {
@@ -841,13 +922,49 @@ function cable(p: Part & { kind: "cable" }): Built {
     update(sk, ctx) {
       const attach = handle.update(sk, from);
       span(wire, from, attach, 0.006);
-      wheel.orient(sub(attach, from), sub(colTop, from));
+      wheel.orient(sub(attach, from), sub(away, from));
       if (stack) {
         stack.lift(ctx.load);
         if (up) span(up, colTop, stack.rodTop(), 0.006);
       }
     },
   };
+}
+
+/**
+ * Cable crossover frame joining two towers, one at `from` and its mirror
+ * across the user: a bridge between the column tops with a multi-grip
+ * pull-up bar under it, and a floor tie behind.
+ */
+function crossover(p: Part & { kind: "crossover" }): Built {
+  const m = M();
+  const g = new THREE.Group();
+  const a = towerLayout(p.from);
+  const b = towerLayout([-p.from[0], p.from[1], p.from[2]]);
+  const y = Math.max(a.top, b.top) + 0.16;
+  const z = (a.col[2] + b.col[2]) / 2;
+  for (const dz of [0.16, -0.16]) g.add(beam([a.col[0], y, a.col[2] + dz], [b.col[0], y, b.col[2] + dz], 0.08));
+  for (const t of [a, b]) {
+    g.add(rbox([t.col[0], y, t.col[2]], [0.16, 0.12, 0.44], m.frame, 0, 0.02));
+    g.add(beam([t.col[0], y - 0.06, t.col[2]], [t.col[0], a.top + 0.12, t.col[2]], 0.08));
+  }
+  // Cross members along the bridge.
+  for (const x of [-0.5, 0, 0.5]) g.add(beam([x, y, z - 0.16], [x, y, z + 0.16], 0.05));
+  // Pull-up bar hung in front of the bridge, angled neutral grips at its ends.
+  const by = y - 0.2;
+  const bz = z + 0.22;
+  for (const x of [0.62, -0.62]) g.add(beam([x, y - 0.03, z + 0.16], [x, by, bz], 0.05));
+  const bar = xRod(1.5, 0.016, m.chrome);
+  bar.position.set(0, by, bz);
+  g.add(bar);
+  for (const s of [1, -1]) {
+    const grip = xRod(0.22, 0.02, m.grip);
+    grip.position.set(s * 0.32, by, bz);
+    g.add(grip, rod([s * 0.75, by, bz], [s * 0.9, by - 0.05, bz + 0.18], 0.018, m.grip));
+  }
+  g.add(beam([a.col[0], 0.035, z - 0.2], [b.col[0], 0.035, z - 0.2], 0.07));
+  for (const t of [a, b]) g.add(beam([t.col[0], 0.035, t.col[2]], [t.col[0], 0.035, z - 0.2], 0.07));
+  return { object: g };
 }
 
 // ── Machines ───────────────────────────────────────────────────────────────
@@ -1104,6 +1221,8 @@ export function buildPart(p: Part): Built {
       return kettlebell(p);
     case "cable":
       return cable(p);
+    case "crossover":
+      return crossover(p);
     case "lever":
       return lever(p);
     case "sled":
@@ -1123,37 +1242,20 @@ export function buildPart(p: Part): Built {
       return dipBars(p);
     case "stack":
       return stackPart(p);
+    case "padStand":
+      return padStand(p);
+    case "benchBox":
+      return benchBox(p);
+    case "station":
+      return station(p);
     case "band": {
       const b = mesh(G().cyl, m.band);
       return { object: b, update: (sk) => span(b, sk.hand[0], sk.hand[1], 0.012) };
     }
     case "treadmill":
-      return {
-        object: group(
-          rbox([0, 0.085, -0.05], [0.82, 0.17, 1.8], m.shroud, 0, 0.05),
-          rbox([0, 0.172, -0.05], [0.56, 0.008, 1.68], m.grip, 0, 0.003),
-          beam([0.36, 0.17, 0.78], [0.36, 1.25, 0.66], 0.06),
-          beam([-0.36, 0.17, 0.78], [-0.36, 1.25, 0.66], 0.06),
-          rbox([0, 1.3, 0.68], [0.8, 0.12, 0.2], m.shroud, -20, 0.03),
-          rod([0.36, 1.12, 0.66], [0.36, 1.12, 0.25], 0.02, m.grip),
-          rod([-0.36, 1.12, 0.66], [-0.36, 1.12, 0.25], 0.02, m.grip),
-        ),
-      };
-    case "bike": {
-      const fly = xRod(0.05, 0.25, m.plate, G().disc);
-      fly.position.set(0, 0.42, 0.72);
-      return {
-        object: group(
-          rbox([0, 0.81, -0.08], [0.2, 0.06, 0.28], m.pad, 0, 0.025),
-          beam([0, 0.78, -0.06], [0, 0.36, 0.3], 0.06),
-          beam([0, 0.36, 0.33], [0, 1.0, 0.52], 0.07),
-          rod([0.2, 1.02, 0.5], [-0.2, 1.02, 0.5], 0.018, m.grip),
-          rod([0.13, 0.36, 0.33], [-0.13, 0.36, 0.33], 0.02, m.chrome),
-          fly,
-          rbox([0, 0.03, 0.3], [0.5, 0.06, 1.2], m.frame, 0, 0.015),
-        ),
-      };
-    }
+      return treadmill();
+    case "bike":
+      return bike();
     case "rower": {
       const fly = mesh(G().disc, m.shroud);
       fly.position.set(0, 0.5, 1.05);
@@ -1171,22 +1273,8 @@ export function buildPart(p: Part): Built {
       };
     }
     case "elliptical":
-      return {
-        object: group(
-          rbox([0, 0.06, 0.05], [0.5, 0.12, 1.5], m.shroud, 0, 0.04),
-          beam([0, 0.1, 0.6], [0, 1.35, 0.55], 0.08),
-          rbox([0, 1.4, 0.55], [0.36, 0.1, 0.16], m.shroud, 0, 0.03),
-        ),
-      };
+      return elliptical();
     case "stairs":
-      return {
-        object: group(
-          rbox([0, 0.08, 0.05], [0.7, 0.16, 0.9], m.shroud, 0, 0.04),
-          beam([0, 0.16, 0.5], [0, 1.4, 0.45], 0.09),
-          rbox([0, 1.42, 0.45], [0.42, 0.12, 0.16], m.shroud, 0, 0.03),
-          rod([0.3, 1.32, 0.45], [0.3, 1.32, -0.05], 0.02, m.grip),
-          rod([-0.3, 1.32, 0.45], [-0.3, 1.32, -0.05], 0.02, m.grip),
-        ),
-      };
+      return stairs();
   }
 }

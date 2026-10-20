@@ -123,6 +123,21 @@ Parts follow body anchors, such as hands, feet or the pelvis, so a lever arm or
 a cable always meets the hand. A weight stack rises with `Frame.load`, which
 goes from 0 to 1 as the weight is lifted, eased by a spring.
 
+Besides the basic parts (levers, cables, sleds, racks, bars), these kinds model
+whole machines:
+
+- `crossover` — a two-tower cable crossover with bridge beams and a pull-up bar.
+  A low or wide cable `from` gets an adjustable post rail with a pop-pin
+  carriage; a high, central one keeps the lat-tower gooseneck.
+- `station` — a dedicated machine by `type`: `tbar`, `hack`, `calf`,
+  `seatedCalf`, `kickback`, `legCurl`, `hyper`, `hipThrust`, `rotary`,
+  `captain` or `rowBench`. Their moving parts (carriages, yokes, plates) follow
+  the body.
+- `padStand` — a pad on an adjustable post (preacher and chest-supported pads).
+- `benchBox` — a padded box bench.
+- Cardio (`treadmill`, `bike`, `elliptical`, `stairs`) drives cranks, pedal arms
+  and stepper pedals from the feet.
+
 ## Accessibility and performance
 
 - The canvas has `role="img"` and a descriptive label.

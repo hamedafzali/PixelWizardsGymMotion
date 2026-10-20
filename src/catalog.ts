@@ -33,7 +33,7 @@ const handles = (pivotL: V3, end: "handle" | "roller" | "pad" = "handle"): Part[
 const kneePad: Part = { kind: "pad", to: "knees", size: [0.42, 0.07, 0.12], offset: [0, 0.08, -0.02], roller: true };
 const rack: Part = { kind: "rack", height: 1.38, width: 1.2, z: -0.12 };
 const benchRack = (height = 1.08, z = -0.62): Part => ({ kind: "rack", height, width: 1.15, z });
-const thrustBench: Part = { kind: "box", at: [0, 0.22, -0.72], size: [0.9, 0.44, 0.36], tone: "pad" };
+const thrustBench: Part = { kind: "benchBox", at: [0, 0.22, -0.72], size: [0.9, 0.44, 0.36] };
 
 // ── The library ────────────────────────────────────────────────────────────
 export const MOTIONS: Record<string, MotionSpec> = {
@@ -60,8 +60,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
     pattern: "kneeExtension",
     params: { mode: "lyingCurl" },
     equipment: [
-      { kind: "box", at: [0, 0.69, 0.25], size: [0.38, 0.08, 1.3], tone: "pad" },
-      { kind: "box", at: [0, 0.33, 0.25], size: [0.1, 0.66, 1.0], tone: "frame" },
+      { kind: "station", type: "legCurl" },
       { kind: "lever", pivot: [0.32, 0.72, -0.44], to: "feet", offset: [0, 0.06, 0], end: "roller", width: 0.42 },
     ],
   },
@@ -69,11 +68,9 @@ export const MOTIONS: Record<string, MotionSpec> = {
     pattern: "squat",
     params: { load: "hack" },
     equipment: [
-      { kind: "box", at: [0.34, 0.95, -0.3], size: [0.06, 0.06, 2.1], tilt: -60, tone: "frame" },
-      { kind: "box", at: [-0.34, 0.95, -0.3], size: [0.06, 0.06, 2.1], tilt: -60, tone: "frame" },
+      { kind: "station", type: "hack" },
       { kind: "pad", to: "upperBack", size: [0.42, 0.6, 0.07], offset: [0, -0.12, -0.04], tilt: -14 },
       { kind: "pad", to: "shoulders", size: [0.56, 0.07, 0.12], offset: [0, 0.07, -0.02] },
-      { kind: "box", at: [0, 0.025, 0.26], size: [0.8, 0.05, 0.55], tone: "metal" },
     ],
     camera: { yaw: 70 },
   },
@@ -102,10 +99,8 @@ export const MOTIONS: Record<string, MotionSpec> = {
     pattern: "calfRaise",
     params: { step: 0.1 },
     equipment: [
-      { kind: "box", at: [0, 0.05, 0.16], size: [0.6, 0.1, 0.26], tone: "metal" },
+      { kind: "station", type: "calf" },
       { kind: "pad", to: "shoulders", size: [0.6, 0.08, 0.14], offset: [0, 0.07, 0] },
-      { kind: "box", at: [0.42, 1.1, -0.12], size: [0.06, 2.2, 0.06], tone: "frame" },
-      { kind: "box", at: [-0.42, 1.1, -0.12], size: [0.06, 2.2, 0.06], tone: "frame" },
     ],
   },
   "e-seatcalf": {
@@ -113,7 +108,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
     params: { seated: true, step: 0.1 },
     equipment: [
       seat(undefined, [0, 0.55, 0]),
-      { kind: "box", at: [0, 0.05, 0.68], size: [0.5, 0.1, 0.22], tone: "metal" },
+      { kind: "station", type: "seatedCalf" },
       { kind: "pad", to: "knees", size: [0.42, 0.07, 0.16], offset: [0, 0.08, 0] },
       { kind: "lever", pivot: [0.32, 0.6, -0.2], to: "knees", offset: [0, 0.1, 0], end: "none" },
     ],
@@ -123,15 +118,14 @@ export const MOTIONS: Record<string, MotionSpec> = {
     equipment: [
       { kind: "pad", to: "chest", size: [0.38, 0.3, 0.07], offset: [0, -0.04, 0.05], tilt: 35 },
       { kind: "lever", pivot: [-0.3, 0.92, 0.05], to: "footR", offset: [0, -0.04, -0.08], end: "pad" },
-      { kind: "box", at: [0.1, 0.015, 0.06], size: [0.25, 0.03, 0.35], tone: "metal" },
-      { kind: "box", at: [0, 0.6, 0.5], size: [0.5, 1.2, 0.08], tone: "frame" },
+      { kind: "station", type: "kickback" },
     ],
   },
   "e-hipthrustm": {
     pattern: "hipThrust",
     params: { hold: "handles" },
     equipment: [
-      thrustBench,
+      { kind: "station", type: "hipThrust" },
       { kind: "pad", to: "pelvis", size: [0.48, 0.07, 0.18], offset: [0, 0.13, 0.04] },
       { kind: "lever", pivot: [0.36, 0.32, 0.35], to: "pelvis", offset: [0, 0.13, 0.04], end: "none" },
       { kind: "lever", pivot: [-0.36, 0.32, 0.35], to: "pelvis", offset: [0, 0.13, 0.04], end: "none" },
@@ -149,12 +143,12 @@ export const MOTIONS: Record<string, MotionSpec> = {
   "e-splitsquat": {
     pattern: "lunge",
     params: { style: "bulgarian" },
-    equipment: [...dbs, { kind: "box", at: [-0.08, 0.22, -0.72], size: [0.36, 0.44, 0.42], tone: "pad" }],
+    equipment: [...dbs, { kind: "benchBox", at: [-0.08, 0.22, -0.72], size: [0.4, 0.44, 0.42] }],
   },
   "e-stepup": {
     pattern: "lunge",
     params: { style: "step", box: 0.42 },
-    equipment: [...dbs, { kind: "box", at: [0, 0.21, 0.34], size: [0.6, 0.42, 0.44], tone: "pad" }],
+    equipment: [...dbs, { kind: "benchBox", at: [0, 0.21, 0.34], size: [0.6, 0.42, 0.44] }],
   },
   "e-hipthrust": { pattern: "hipThrust", equipment: [thrustBench, bar()] },
   "e-kbswing": { pattern: "swing", equipment: [{ kind: "kettlebell", to: "hands", offset: [0, -0.1, 0] }] },
@@ -187,7 +181,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
   "e-cablefly": {
     pattern: "armArc",
     params: { plane: "transverse", posture: "standing", lean: 14, from: 78, to: 6, bend: 18, elevFrom: -22, elevTo: 28, cues: "Squeeze|Open" },
-    equipment: [tower([1.15, 2.05, -0.1], "single", "handL"), tower([-1.15, 2.05, -0.1], "single", "handR")],
+    equipment: [tower([1.15, 2.05, -0.1], "single", "handL"), tower([-1.15, 2.05, -0.1], "single", "handR"), { kind: "crossover", from: [1.15, 2.05, -0.1] }],
     camera: { yaw: 25 },
   },
   "e-smithbench": { pattern: "press", params: { grip: 0.4 }, equipment: [flatBench(), { kind: "smith", z: -0.43 }, bar("straight", 1.9)] },
@@ -205,14 +199,13 @@ export const MOTIONS: Record<string, MotionSpec> = {
   "e-row": {
     pattern: "row",
     params: { style: "machine" },
-    equipment: [seat(), { kind: "box", at: [0, 0.98, 0.3], size: [0.36, 0.36, 0.08], tone: "pad" }, ...handles([0.3, 0.25, 0.8]), stack([-0.62, 0, 0.6])],
+    equipment: [seat(), { kind: "padStand", at: [0, 0.98, 0.3], size: [0.36, 0.36, 0.08] }, ...handles([0.3, 0.25, 0.8]), stack([-0.62, 0, 0.6])],
   },
   "e-cablerow": {
     pattern: "row",
     params: { style: "cable" },
     equipment: [
-      { kind: "box", at: [0, 0.18, 0.15], size: [0.32, 0.36, 1.3], tone: "pad" },
-      { kind: "box", at: [0, 0.3, 0.76], size: [0.55, 0.3, 0.05], tone: "metal", tilt: -20 },
+      { kind: "station", type: "rowBench" },
       tower([0, 0.38, 1.05], "single"),
     ],
   },
@@ -227,7 +220,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
     params: { style: "tbar" },
     equipment: [
       { kind: "lever", pivot: [0, 0.04, -1.05], to: "hands", offset: [0, -0.04, 0.08], end: "handle", width: 0.22 },
-      { kind: "box", at: [0, 0.025, 0], size: [0.7, 0.05, 0.5], tone: "metal" },
+      { kind: "station", type: "tbar" },
     ],
   },
   "e-bbrow": { pattern: "row", params: { style: "bent" }, equipment: [bar()] },
@@ -260,9 +253,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
     pattern: "trunkFlex",
     params: { style: "hyper" },
     equipment: [
-      { kind: "box", at: [0, 0.8, 0.02], size: [0.45, 0.08, 0.36], tilt: -45, tone: "pad" },
-      { kind: "box", at: [0, 0.25, -0.62], size: [0.42, 0.05, 0.3], tilt: -45, tone: "metal" },
-      { kind: "box", at: [0, 0.5, -0.32], size: [0.08, 0.08, 1.1], tilt: -45, tone: "frame" },
+      { kind: "station", type: "hyper" },
     ],
   },
   "e-shrug": { pattern: "shrug", equipment: dbs },
@@ -300,7 +291,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
   "e-reversefly": {
     pattern: "armArc",
     params: { plane: "transverse", posture: "seated", lean: 8, from: 8, to: 85, bend: 8, cues: "Open|Return" },
-    equipment: [seat(), { kind: "box", at: [0, 0.98, 0.3], size: [0.36, 0.4, 0.08], tone: "pad" }, ...handles([0.12, 1.35, 0.3]), stack()],
+    equipment: [seat(), { kind: "padStand", at: [0, 0.98, 0.3], size: [0.36, 0.4, 0.08] }, ...handles([0.12, 1.35, 0.3]), stack()],
     camera: { yaw: 150, pitch: 35 },
   },
   "e-dbreversefly": {
@@ -319,13 +310,13 @@ export const MOTIONS: Record<string, MotionSpec> = {
   "e-preacher": {
     pattern: "elbow",
     params: { posture: "seated", upperArm: 40, lean: 12, from: 15, to: 125 },
-    equipment: [seat(), { kind: "box", at: [0, 1.0, 0.33], size: [0.5, 0.04, 0.32], tilt: -50, tone: "pad" }, bar("ez", 1.3)],
+    equipment: [seat(), { kind: "padStand", at: [0, 1.0, 0.33], size: [0.5, 0.05, 0.32], tilt: -50 }, bar("ez", 1.3)],
   },
   "e-cablecurl": { pattern: "elbow", equipment: [tower([0, 0.1, 0.6], "bar")] },
   "e-curlm": {
     pattern: "elbow",
     params: { posture: "seated", upperArm: 50, lean: 10, from: 15, to: 125 },
-    equipment: [seat(), { kind: "box", at: [0, 1.02, 0.32], size: [0.55, 0.04, 0.3], tilt: -40, tone: "pad" }, ...handles([0.22, 0.86, 0.38])],
+    equipment: [seat(), { kind: "padStand", at: [0, 1.02, 0.32], size: [0.55, 0.05, 0.3], tilt: -40 }, ...handles([0.22, 0.86, 0.38])],
   },
   "e-pushdown": {
     pattern: "elbow",
@@ -350,11 +341,11 @@ export const MOTIONS: Record<string, MotionSpec> = {
   "e-trim": {
     pattern: "elbow",
     params: { posture: "seated", upperArm: 50, from: 110, to: 15, cues: "Extend|Return" },
-    equipment: [seat(), { kind: "box", at: [0, 1.0, 0.3], size: [0.55, 0.04, 0.3], tilt: -40, tone: "pad" }, ...handles([0.22, 0.86, 0.36])],
+    equipment: [seat(), { kind: "padStand", at: [0, 1.0, 0.3], size: [0.55, 0.05, 0.3], tilt: -40 }, ...handles([0.22, 0.86, 0.36])],
   },
   "e-dipm": { pattern: "press", params: { posture: "seated", dir: "down" }, equipment: [seat(5), ...handles([0.4, 0.95, -0.4]), stack()] },
   "e-closebench": { pattern: "press", params: { grip: 0.2, tucked: true }, equipment: [flatBench(), benchRack(), bar()] },
-  "e-benchdip": { pattern: "dip", params: { style: "bench" }, equipment: [{ kind: "box", at: [0, 0.22, -0.38], size: [0.9, 0.44, 0.36], tone: "pad" }] },
+  "e-benchdip": { pattern: "dip", params: { style: "bench" }, equipment: [{ kind: "benchBox", at: [0, 0.22, -0.38], size: [0.9, 0.44, 0.36] }] },
   "e-wristcurl": { pattern: "elbow", params: { posture: "seated", upperArm: 35, lean: 25, from: 85, to: 110 }, equipment: [flatBench([0, 0.43, 0.2]), ...dbs] },
   "e-farmer": { pattern: "carry", equipment: dbs },
 
@@ -365,7 +356,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
     equipment: [seat(), { kind: "pad", to: "chest", size: [0.44, 0.08, 0.1], offset: [0, 0.1, 0.05] }, stack()],
   },
   "e-cablecrunch": { pattern: "trunkFlex", params: { style: "cable" }, equipment: [mat, tower([0, 2.15, 0.62], "rope")] },
-  "e-rotary": { pattern: "twist", params: { style: "machine" }, equipment: [seat(), { kind: "pad", to: "chest", size: [0.4, 0.08, 0.1], offset: [0, 0, 0.06] }], camera: { yaw: 20, pitch: 45 } },
+  "e-rotary": { pattern: "twist", params: { style: "machine" }, equipment: [seat(), { kind: "pad", to: "chest", size: [0.4, 0.08, 0.1], offset: [0, 0, 0.06] }, { kind: "station", type: "rotary" }], camera: { yaw: 20, pitch: 45 } },
   "e-woodchop": { pattern: "woodchop", equipment: [tower([-1.0, 2.1, 0.12], "single")], camera: { yaw: 15 } },
   "e-crunch": { pattern: "trunkFlex", params: { style: "crunch" }, equipment: [mat] },
   "e-legraise": { pattern: "legRaise", equipment: [{ kind: "pullupBar", height: 2.25 }] },
@@ -373,11 +364,7 @@ export const MOTIONS: Record<string, MotionSpec> = {
     pattern: "legRaise",
     params: { style: "captain", knees: true },
     equipment: [
-      { kind: "box", at: [0, 1.2, -0.2], size: [0.42, 0.6, 0.07], tone: "pad" },
-      { kind: "box", at: [0.24, 1.2, 0.08], size: [0.1, 0.06, 0.38], tone: "pad" },
-      { kind: "box", at: [-0.24, 1.2, 0.08], size: [0.1, 0.06, 0.38], tone: "pad" },
-      { kind: "box", at: [0.3, 0.7, -0.22], size: [0.05, 1.4, 0.05], tone: "frame" },
-      { kind: "box", at: [-0.3, 0.7, -0.22], size: [0.05, 1.4, 0.05], tone: "frame" },
+      { kind: "station", type: "captain" },
     ],
   },
   "e-russiantwist": { pattern: "twist", equipment: [mat], camera: { yaw: 20, pitch: 30 } },

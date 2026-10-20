@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { BODY, DEVICE, EXERCISE_IDS, MACHINE, MOTIONS, MUSCLES, motionSpecFor, musclesFor, resolveMotion, sample, solve } from "../dist/index.js";
+import { BODY, DEVICE, EXERCISE_IDS, MACHINE, MOTIONS, MUSCLES, checkPhases, cycleLength, motionSpecFor, musclesFor, peakTime, phasesOf, resolveMotion, sample, solve, withTempo } from "../dist/index.js";
 
 const finite = (v) => v.every(Number.isFinite);
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
@@ -66,8 +66,8 @@ describe("movement engine", () => {
 
   it("lifts the load during the working half and rests it after", () => {
     const { motion } = resolveMotion(MOTIONS["e-legpress"]);
-    const [a, h1, b] = motion.tempo ?? [1.2, 0.3, 1.8, 0.3];
-    assert.equal(motion.effort, "second");
+    const [a, h1, b] = phasesOf(motion).map((p) => p.time);
+    assert.equal(motion.rest, 1);
     // Leg press: keys[0] is the extended (lifted) end, so load starts high.
     assert.ok(sample(motion, 0).load > 0.99);
     assert.ok(sample(motion, a + h1 * 0.5).load < 0.01);
@@ -79,7 +79,7 @@ describe("movement engine", () => {
 
 describe("timeline", () => {
   const rep = resolveMotion(MOTIONS["e-squat"]).motion;
-  const [a, h1] = rep.tempo ?? [1.2, 0.3, 1.8, 0.3];
+  const [a, h1] = phasesOf(rep).map((p) => p.time);
   const at = (t, alive = false) => sample(rep, t, undefined, { alive }).pose;
 
   it("passes through every key", () => {

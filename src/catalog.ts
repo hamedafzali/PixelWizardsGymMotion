@@ -1,5 +1,6 @@
 import type { ExerciseInput, Motion, MotionSpec, Part, V3 } from "./types.js";
 import { buildMotion } from "./patterns.js";
+import { checkPhases, withTempo } from "./phases.js";
 
 // The exercise library as data: exercise id → MotionSpec. Equipment is built
 // from a small set of standard presets, so a new exercise is a few lines here
@@ -685,13 +686,19 @@ export function motionSpecFor(ex: ExerciseInput): MotionSpec {
   return { ...spec, equipment, device: DEVICE[shown] };
 }
 
-/** A spec turned into a playable motion. Spec equipment and tempo win over the pattern's own. */
+/**
+ * A spec turned into a playable motion. Spec equipment, phases and tempo win
+ * over the pattern's own; phases that cannot play throw, with every problem
+ * listed.
+ */
 export function resolveMotion(spec: MotionSpec): { motion: Motion; equipment: Part[] } {
-  const motion = buildMotion(spec.pattern, spec.params);
-  return {
-    motion: spec.tempo ? { ...motion, tempo: spec.tempo } : motion,
-    equipment: spec.equipment ?? motion.defaultEquipment ?? [],
-  };
+  let motion = buildMotion(spec.pattern, spec.params);
+  if (spec.phases || spec.positions)
+    motion = { ...motion, phases: spec.phases ?? motion.phases, positions: { ...motion.positions, ...spec.positions } };
+  else if (spec.tempo) motion = withTempo(motion, spec.tempo);
+  const errors = checkPhases(motion);
+  if (errors.length) throw new Error(`${spec.pattern}: ${errors.join("; ")}`);
+  return { motion, equipment: spec.equipment ?? motion.defaultEquipment ?? [] };
 }
 
 /** Every exercise id with its own catalog entry. */

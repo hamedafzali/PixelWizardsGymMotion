@@ -8,5 +8,6 @@ export { musclesFor, type Targets } from "./targets.js";
 export { MOTIONS, MACHINE, DEVICE, EXERCISE_IDS, motionSpecFor, resolveMotion } from "./catalog.js";
 export { buildMotion, PATTERN_IDS } from "./patterns.js";
 export { solve, anchorPoint, BODY, frameOf, type Skeleton } from "./rig.js";
-export { sample, cycleLength, lerpPose, type Frame } from "./timeline.js";
+export { sample, cycleLength, peakTime, lerpPose, type Frame } from "./timeline.js";
+export { phasesOf, checkPhases, positionsOf, withTempo, TEMPO_PHASES, type ResolvedPhase } from "./phases.js";
 export { Spring, type SpringSpec } from "./spring.js";

@@ -3,7 +3,7 @@ import { resolveMotion } from "../catalog.js";
 import type { Highlight } from "../muscles.js";
 import { solve, type Skeleton } from "../rig.js";
 import { Spring, type SpringSpec } from "../spring.js";
-import { sample, type Frame } from "../timeline.js";
+import { peakTime, sample, type Frame } from "../timeline.js";
 import type { Motion, MotionSpec, Part } from "../types.js";
 import { buildPart, type Built } from "./equipment.js";
 import { buildFigure, type Figure } from "./figure.js";
@@ -106,15 +106,15 @@ export class GymScene {
 
   /** Time of the working end of the rep: a good still frame. */
   get peakTime(): number {
-    return this.motion.kind === "rep" ? (this.spec.tempo ?? this.motion.tempo ?? [1.2])[0] : 0;
+    return peakTime(this.motion);
   }
 
   private pose(dt: number): Frame {
-    const f = sample(this.motion, this.time, this.spec.tempo);
+    const f = sample(this.motion, this.time);
     const sk = solve(f.pose);
     this.frame = f;
     this.skeleton = sk;
-    this.figure.update(sk, f.working ? Math.sin(Math.PI * Math.min(1, f.phase)) : 0);
+    this.figure.update(sk, f.pulse);
     const ctx = { load: dt > 0 ? this.load.step(f.load, dt) : this.load.value };
     for (const p of this.parts) p.update?.(sk, ctx);
     return f;

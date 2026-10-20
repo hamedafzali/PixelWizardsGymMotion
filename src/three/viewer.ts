@@ -7,7 +7,7 @@ import { motionSpecFor } from "../catalog.js";
 import { highlightFor, type Highlight } from "../muscles.js";
 import { musclesFor } from "../targets.js";
 import { Spring } from "../spring.js";
-import type { Frame } from "../timeline.js";
+import { cycleLength, type Frame } from "../timeline.js";
 import type { ExerciseInput, MotionSpec } from "../types.js";
 import { PALETTE } from "./equipment.js";
 import { dualQuaternionSkinning } from "./figure.js";
@@ -179,7 +179,7 @@ export class GymViewer {
   get repSeconds(): number | null {
     const m = this.scene.motion;
     if (m.kind !== "rep") return null;
-    return (this.scene.spec.tempo ?? m.tempo ?? [1.2, 0.3, 1.8, 0.3]).reduce((a, b) => a + b, 0);
+    return cycleLength(m);
   }
 
   /** Re-measure the container. Called automatically on resize. */

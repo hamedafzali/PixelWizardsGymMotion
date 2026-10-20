@@ -132,27 +132,75 @@ export interface MotionSpec {
   pattern: PatternId;
   params?: Params;
   equipment?: Part[];
-  /** Seconds: [first half, pause, second half, pause]. Overrides the pattern's default. */
+  /** Seconds: [first half, pause, second half, pause]. Overrides the pattern's default timing; ignored with `phases`. */
   tempo?: [number, number, number, number];
+  /** The rep as phases, replacing the pattern's own. Positions name points on the pattern's path. */
+  phases?: Phase[];
+  /** Extra named positions (0 → 1) for `phases`. */
+  positions?: Record<string, number>;
   camera?: { yaw?: number; pitch?: number; zoom?: number };
   /** Name of the machine or station shown, e.g. "Smith machine". */
   device?: string;
 }
 
+/** How a phase moves through time. "linear" follows the keys as authored (they are already eased). */
+export type PhaseEase = "linear" | "smooth" | "explosive";
+export type Breath = "in" | "out" | "hold";
+
+/**
+ * One part of a rep: move along the path to `to`, or hold still when `to` is
+ * omitted, for `time` seconds.
+ */
+export interface Phase {
+  /** Shown to apps as `Frame.phaseName`, e.g. "lower", "pause", "drive". */
+  name?: string;
+  /** Where the phase ends: a path position 0 → 1 or a named position. Omit to hold still. */
+  to?: number | string;
+  /** Seconds. */
+  time: number;
+  /**
+   * The phase's own path instead of the motion's keys, played from first to
+   * last — a different way back, say. Start it where the previous phase ends
+   * and end it where `to` is on the main path.
+   */
+  keys?: Pose[];
+  ease?: PhaseEase;
+  /** Coaching label; a phase without one keeps the previous phase's. */
+  cue?: string;
+  /** How hard the target muscles work, 0 → 1. Drives the highlight pulse and the muscle flex. Default 0. */
+  effort?: number;
+  /** Breathing. Defaults: out while working, in while moving easy, held in a hold; free in a loop. */
+  breath?: Breath;
+}
+
 /** What a pattern produces: a time-less movement the timeline plays. */
 export interface Motion {
-  /** Poses sampled evenly along the movement. */
+  /** Poses sampled evenly along the movement: the path phases move along. */
   keys: Pose[];
   /**
-   * rep:  keys[0] → keys[last] → back, timed by tempo.
-   * loop: cycles keys[0] → … → keys[last] → keys[0] over `period` seconds.
+   * rep:  a path from keys[0] (position 0) to keys[last] (position 1); phases
+   *       move back and forth along it.
+   * loop: keys[0] → … → keys[last] → keys[0] (position 1 wraps to 0); phases
+   *       only move forwards.
    */
   kind: "rep" | "loop";
+  /**
+   * The parts of one rep or lap, played in order and repeated. When omitted
+   * the old fields below describe it (tempo, period, effort, cues), which
+   * makes four phases for a rep — go, hold, return, rest — and two for a loop.
+   */
+  phases?: Phase[];
+  /** Extra named positions on the path (0 → 1) for phases to move to. Built in: start, mid, end, rest, peak. */
+  positions?: Record<string, number>;
+  /** Path position where the load rests (weight stacks sit down here). Default 0, or 1 for `effort: "second"`. */
+  rest?: number;
+  /** Old format: seconds of [go, hold, return, rest]. */
   tempo?: [number, number, number, number];
+  /** Old format: seconds per loop. */
   period?: number;
-  /** Which half of a rep does the work (keys[0] → keys[last] is "first"). */
+  /** Old format: which half of a rep does the work (keys[0] → keys[last] is "first"). */
   effort?: "first" | "second" | "both";
-  /** Coaching labels for the two halves of a rep, e.g. ["Lower", "Press"]. */
+  /** Old format: coaching labels for the two halves, e.g. ["Lower", "Press"]. */
   cues?: [string, string];
   /** The pattern's usual equipment; a spec's own `equipment` replaces it. */
   defaultEquipment?: Part[];

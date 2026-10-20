@@ -54,13 +54,13 @@ import { motionSpecFor, resolveMotion, sample, solve } from "pixelwizards-gym-mo
 
 const spec = motionSpecFor({ id: "e-pulldown", name: "Lat pulldown" });
 const { motion, equipment } = resolveMotion(spec);
-const frame = sample(motion, 1.4);   // { pose, cue, working, phase, load }
+const frame = sample(motion, 1.4);   // { pose, cue, phaseName, working, effort, load, rep, ... }
 const skeleton = solve(frame.pose);  // joint positions in metres, Y up, facing +Z
 ```
 
 `sample` moves through the key poses on a spline, with a minimum-jerk speed
 profile. On top of that it adds breathing and a slight sway: the figure
-breathes out through the working half and never freezes in a hold. Pass
+breathes as each phase says and never freezes in a hold. Pass
 `{ alive: false }` as the fourth argument to get the bare keys.
 
 `musclesFor(spec)` returns the muscles a movement works, as
@@ -81,7 +81,43 @@ A `MotionSpec` is plain JSON:
 
 - `pattern` and `params` give the movement;
 - `equipment` is a list of `Part`s;
-- `tempo` and `camera` are optional.
+- `phases`, `positions`, `tempo` and `camera` are optional.
+
+## Phases
+
+Every motion plays as a list of phases. A phase moves the body along the
+pattern's path to a position, or holds still, for a number of seconds:
+
+```ts
+const pausedSquat: MotionSpec = {
+  pattern: "squat",
+  positions: { parallel: 0.8 },
+  phases: [
+    { name: "sit", to: "parallel", time: 2, cue: "Sit back", breath: "in" },
+    { name: "pause", time: 1, cue: "Stay tight", effort: 0.6 },
+    { name: "stand", to: "start", time: 1, cue: "Drive up", effort: 1, ease: "explosive" },
+  ],
+};
+```
+
+- `to` is a number from 0 (start of the path) to 1 (far end), or a name: `start`, `mid`, `end`, `rest` (where the load sits), `peak` (the far side from it), plus any you add in `positions`. Leave it out to hold.
+- `time` is in seconds. `cue` carries over from the previous phase when left out.
+- `effort` (0 → 1, default 0) drives `Frame.working`, the highlight glow and the muscle flex.
+- `breath` is `"in"`, `"out"` or `"hold"`. By default a rep breathes out on effort, in otherwise, and holds in a pause. A loop breathes freely.
+- `ease` is `"linear"` (follow the keys as written), `"smooth"` or `"explosive"`.
+- `keys` gives a phase its own poses, for a part that leaves the path.
+
+In a loop, positions only move forwards: going back to 0 finishes the lap.
+`checkPhases(motion)` lists any mistakes, and `resolveMotion` throws on them.
+
+Patterns use the standard four phases (`go`, `hold`, `return`, `rest`), so
+`spec.tempo` still retimes them. The burpee and thruster have their own parts.
+Motions in the old format (`tempo`, two `cues`, `effort: "first" | "second" | "both"`, `period`)
+still play, converted to those four phases.
+
+Each `Frame` reports `phaseIndex`, `phaseName`, `phase` (0 → 1 through it),
+`effort`, `pulse` and `rep` (completed reps). `working` is false during a
+hold unless the hold has effort of its own.
 
 Parts follow body anchors, such as hands, feet or the pelvis, so a lever arm or
 a cable always meets the hand. A weight stack rises with `Frame.load`, which

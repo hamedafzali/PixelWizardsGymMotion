@@ -1,6 +1,7 @@
 import type { Motion, Params, PatternId, Pose, V3 } from "./types.js";
 import { ARM, BODY, LEG, STAND, chestOf, frameOf, hipOf, local, shoulderOf, sideSign, type Frame } from "./rig.js";
 import { add, comb, lerp, mid, mix, mul, norm, rad, sub } from "./vec.js";
+import { loopPhases, standardPhases } from "./phases.js";
 
 // Movement patterns. Each one turns a handful of settings into a Motion.
 // ~30 patterns cover the whole library: a new exercise is a new set of
@@ -17,6 +18,15 @@ const cues = (p: Params, d: [string, string]): [string, string] => {
   const c = p.cues;
   return typeof c === "string" && c.includes("|") ? (c.split("|", 2) as [string, string]) : d;
 };
+
+/** A rep in the standard four phases; `effort` says which way does the work. */
+function rep(keys: Pose[], effort: "first" | "second" | "both", c: [string, string], tempo: [number, number, number, number], extra: Partial<Motion> = {}): Motion {
+  return { keys, kind: "rep", rest: effort === "second" ? 1 : 0, phases: standardPhases(effort, c, tempo), ...extra };
+}
+/** A loop of two working halves. */
+function loop(keys: Pose[], period: number, c: [string, string], extra: Partial<Motion> = {}): Motion {
+  return { keys, kind: "loop", phases: loopPhases(period, c), ...extra };
+}
 
 /** Samples a movement t ∈ [0, 1] into evenly spaced keys. */
 function sweep(n: number, at: (t: number) => Pose): Pose[] {
@@ -127,7 +137,7 @@ function squat(p: Params): Motion {
       toes: toesOut(14),
     };
   });
-  return { keys, kind: "rep", effort: "second", cues: cues(p, ["Sit down", "Drive up"]), tempo: [2, 0.2, 1.2, 0.6] };
+  return rep(keys, "second", cues(p, ["Sit down", "Drive up"]), [2, 0.2, 1.2, 0.6]);
 }
 
 function hinge(p: Params): Motion {
@@ -145,7 +155,7 @@ function hinge(p: Params): Motion {
       const hands = pair((_, s): V3 => [s * grip, lerp(trap ? 0.3 : 0.23, STAND - 0.01 + 0.47 - ARM * 0.97, e), trap ? 0 : 0.04]);
       return { pelvis, torso, head: -torso[0] * 0.45, hands, feet: stance(0.13, 0), toes: toesOut(8), kneePole: pair((_, s) => [s * 0.25, 0, 1]) };
     });
-    return { keys, kind: "rep", effort: "first", cues: cues(p, ["Lift", "Lower"]), tempo: [1.2, 0.6, 1.8, 0.4] };
+    return rep(keys, "first", cues(p, ["Lift", "Lower"]), [1.2, 0.6, 1.8, 0.4]);
   }
   // Romanian deadlift: hips travel back with soft knees.
   const keys = sweep(7, (t) => {
@@ -161,7 +171,7 @@ function hinge(p: Params): Motion {
       toes: toesOut(6),
     };
   });
-  return { keys, kind: "rep", effort: "second", cues: cues(p, ["Hips back", "Squeeze up"]), tempo: [2, 0.3, 1.2, 0.5] };
+  return rep(keys, "second", cues(p, ["Hips back", "Squeeze up"]), [2, 0.3, 1.2, 0.5]);
 }
 
 function swing(p: Params): Motion {
@@ -182,7 +192,7 @@ function swing(p: Params): Motion {
       toes: toesOut(14),
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Snap hips", "Hike back"]), tempo: [0.5, 0.05, 0.6, 0.05] };
+  return rep(keys, "first", cues(p, ["Snap hips", "Hike back"]), [0.5, 0.05, 0.6, 0.05]);
 }
 
 function legPress(p: Params): Motion {
@@ -202,7 +212,7 @@ function legPress(p: Params): Motion {
       toes: pair(() => [0, Math.cos(rad(angle)), -Math.sin(rad(angle))]),
     };
   });
-  return { keys, kind: "rep", effort: "second", cues: cues(p, ["Lower", "Press"]), tempo: [2, 0.2, 1.2, 0.5] };
+  return rep(keys, "second", cues(p, ["Lower", "Press"]), [2, 0.2, 1.2, 0.5]);
 }
 
 function kneeExtension(p: Params): Motion {
@@ -223,7 +233,7 @@ function kneeExtension(p: Params): Motion {
         toes: pair(() => [0, -Math.cos(phi), -Math.sin(phi)]),
       };
     });
-    return { keys, kind: "rep", effort: "first", cues: cues(p, ["Curl", "Lower"]), tempo: [1.1, 0.4, 2, 0.3] };
+    return rep(keys, "first", cues(p, ["Curl", "Lower"]), [1.1, 0.4, 2, 0.3]);
   }
   const pelvis: V3 = [0, 0.53, 0];
   const torso: V3 = [-12, 0, 0];
@@ -243,13 +253,7 @@ function kneeExtension(p: Params): Motion {
       toes: pair(() => [0, Math.sin(th), Math.cos(th)]),
     };
   });
-  return {
-    keys,
-    kind: "rep",
-    effort: "first",
-    cues: cues(p, mode === "curl" ? ["Curl", "Return"] : ["Extend", "Lower"]),
-    tempo: [1.1, 0.5, 2, 0.3],
-  };
+  return rep(keys, "first", cues(p, mode === "curl" ? ["Curl", "Return"] : ["Extend", "Lower"]), [1.1, 0.5, 2, 0.3]);
 }
 
 function hipAbduction(p: Params): Motion {
@@ -269,7 +273,7 @@ function hipAbduction(p: Params): Motion {
       toes: pair((_, s) => [s * Math.sin(a) * 0.5, 0, 1]),
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, out ? ["Push out", "Return"] : ["Squeeze in", "Return"]), tempo: [1.1, 0.5, 2, 0.3] };
+  return rep(keys, "first", cues(p, out ? ["Push out", "Return"] : ["Squeeze in", "Return"]), [1.1, 0.5, 2, 0.3]);
 }
 
 function calfRaise(p: Params): Motion {
@@ -303,7 +307,7 @@ function calfRaise(p: Params): Motion {
       toes: pair(() => u),
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Rise", "Lower"]), tempo: [1, 0.6, 1.6, 0.4] };
+  return rep(keys, "first", cues(p, ["Rise", "Lower"]), [1, 0.6, 1.6, 0.4]);
 }
 
 function kickback(p: Params): Motion {
@@ -330,7 +334,7 @@ function kickback(p: Params): Motion {
       ],
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Drive back", "Return"]), tempo: [1, 0.4, 1.8, 0.2] };
+  return rep(keys, "first", cues(p, ["Drive back", "Return"]), [1, 0.4, 1.8, 0.2]);
 }
 
 function hipThrust(p: Params): Motion {
@@ -353,7 +357,7 @@ function hipThrust(p: Params): Motion {
       kneePole: pair((_, s) => [s * 0.2, 1, 0.3]),
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Drive hips up", "Lower"]), tempo: [1, 0.8, 1.6, 0.3] };
+  return rep(keys, "first", cues(p, ["Drive hips up", "Lower"]), [1, 0.8, 1.6, 0.3]);
 }
 
 function lunge(p: Params): Motion {
@@ -373,7 +377,7 @@ function lunge(p: Params): Motion {
         toes: pair(() => [0, 0, 1]),
       };
     });
-    return { keys, kind: "rep", effort: "first", cues: cues(p, ["Step up", "Step down"]), tempo: [1.2, 0.4, 1.6, 0.3] };
+    return rep(keys, "first", cues(p, ["Step up", "Step down"]), [1.2, 0.4, 1.6, 0.3]);
   }
   const bulgarian = style === "bulgarian";
   const onBack = str(p, "hold", "sides" as "sides" | "back") === "back";
@@ -400,7 +404,7 @@ function lunge(p: Params): Motion {
       ],
     };
   });
-  return { keys, kind: "rep", effort: "second", cues: cues(p, ["Lower", "Drive up"]), tempo: [1.8, 0.2, 1.2, 0.4] };
+  return rep(keys, "second", cues(p, ["Lower", "Drive up"]), [1.8, 0.2, 1.2, 0.4]);
 }
 
 // ── Upper body: pushing ────────────────────────────────────────────────────
@@ -422,7 +426,7 @@ function press(p: Params): Motion {
         elbowPole: pair((_, s) => pole(f, s, 0, -1, 0.15)),
       };
     });
-    return { keys, kind: "rep", effort: "first", cues: cues(p, ["Push down", "Return"]), tempo: [1.1, 0.4, 1.8, 0.3] };
+    return rep(keys, "first", cues(p, ["Push down", "Return"]), [1.1, 0.4, 1.8, 0.3]);
   }
   const keys = sweep(5, (t) => {
     const e = ease(t);
@@ -433,7 +437,7 @@ function press(p: Params): Motion {
       elbowPole: pair((_, s) => (tucked ? pole(f, s, -0.8, -1, 0.35) : pole(f, s, -0.4, -1, 0.8))),
     };
   });
-  return { keys, kind: "rep", effort: "second", cues: cues(p, ["Lower", "Press"]), tempo: [2, 0.2, 1.1, 0.4] };
+  return rep(keys, "second", cues(p, ["Lower", "Press"]), [2, 0.2, 1.1, 0.4]);
 }
 
 function overheadPress(p: Params): Motion {
@@ -462,7 +466,7 @@ function overheadPress(p: Params): Motion {
       elbowPole,
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Press", "Lower"]), tempo: [1.1, 0.3, 2, 0.3] };
+  return rep(keys, "first", cues(p, ["Press", "Lower"]), [1.1, 0.3, 2, 0.3]);
 }
 
 function armArc(p: Params): Motion {
@@ -499,7 +503,7 @@ function armArc(p: Params): Motion {
     return { ...b, hands, elbowPole: pair((_, s) => pole(f, s, pu, pf, pl)) };
   });
   const effort = str(p, "effort", "first" as "first" | "second");
-  return { keys, kind: "rep", effort, cues: cues(p, effort === "first" ? ["Raise", "Lower"] : ["Lower", "Raise"]), tempo: [1.2, 0.4, 2, 0.3] };
+  return rep(keys, effort, cues(p, effort === "first" ? ["Raise", "Lower"] : ["Lower", "Raise"]), [1.2, 0.4, 2, 0.3]);
 }
 
 // ── Upper body: pulling ────────────────────────────────────────────────────
@@ -582,7 +586,7 @@ function row(p: Params): Motion {
     );
     return { pelvis, torso, head: -torso[0] * 0.5, hands, elbowPole, feet: posture.feet, kneePole: posture.kneePole };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Pull", "Release"]), tempo: [1.1, 0.5, 2, 0.3] };
+  return rep(keys, "first", cues(p, ["Pull", "Release"]), [1.1, 0.5, 2, 0.3]);
 }
 
 function pulldown(p: Params): Motion {
@@ -602,7 +606,7 @@ function pulldown(p: Params): Motion {
       feet: seatedFeet(pelvis),
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Pull", "Release"]), tempo: [1.1, 0.4, 2, 0.4] };
+  return rep(keys, "first", cues(p, ["Pull", "Release"]), [1.1, 0.4, 2, 0.4]);
 }
 
 function pullUp(p: Params): Motion {
@@ -627,13 +631,7 @@ function pullUp(p: Params): Motion {
       kneePole: pair(() => [0, 0, 1]),
     };
   });
-  return {
-    keys,
-    kind: "rep",
-    effort: hold ? "both" : "first",
-    cues: cues(p, hold ? ["Hang", "Hang"] : ["Pull", "Lower"]),
-    tempo: hold ? [2.5, 0, 2.5, 0] : [1.2, 0.4, 2, 0.4],
-  };
+  return rep(keys, hold ? "both" : "first", cues(p, hold ? ["Hang", "Hang"] : ["Pull", "Lower"]), hold ? [2.5, 0, 2.5, 0] : [1.2, 0.4, 2, 0.4]);
 }
 
 function inverted(p: Params): Motion {
@@ -658,7 +656,7 @@ function inverted(p: Params): Motion {
       toes: pair(() => [0, 1, 0.2]),
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Pull", "Lower"]), tempo: [1.1, 0.4, 1.8, 0.3] };
+  return rep(keys, "first", cues(p, ["Pull", "Lower"]), [1.1, 0.4, 1.8, 0.3]);
 }
 
 /** Straight-body poses on the floor, pivoting at the toes. */
@@ -690,7 +688,7 @@ function pushUp(p: Params): Motion {
       toes: pair(() => [0, -0.85, -0.5]),
     };
   });
-  return { keys, kind: "rep", effort: "second", cues: cues(p, ["Lower", "Push"]), tempo: [1.8, 0.2, 1.1, 0.4] };
+  return rep(keys, "second", cues(p, ["Lower", "Push"]), [1.8, 0.2, 1.1, 0.4]);
 }
 
 // ── Arms ───────────────────────────────────────────────────────────────────
@@ -727,7 +725,7 @@ function elbow(p: Params): Motion {
     return { ...b, hands: hands as [V3, V3], elbowPole: poles as [V3, V3] };
   });
   const effort = str(p, "effort", "first" as "first" | "second");
-  return { keys, kind: "rep", effort, cues: cues(p, ["Curl", "Lower"]), tempo: [1.1, 0.4, 2, 0.3] };
+  return rep(keys, effort, cues(p, ["Curl", "Lower"]), [1.1, 0.4, 2, 0.3]);
 }
 
 function dip(p: Params): Motion {
@@ -746,7 +744,7 @@ function dip(p: Params): Motion {
         kneePole: pair(() => [0, 1, 0]),
       };
     });
-    return { keys, kind: "rep", effort: "second", cues: cues(p, ["Lower", "Push"]), tempo: [1.6, 0.2, 1.1, 0.4] };
+    return rep(keys, "second", cues(p, ["Lower", "Push"]), [1.6, 0.2, 1.1, 0.4]);
   }
   const barY = num(p, "bar", 1.3);
   const keys = sweep(5, (t) => {
@@ -765,7 +763,7 @@ function dip(p: Params): Motion {
       kneePole: pair(() => [0, 0, 1]),
     };
   });
-  return { keys, kind: "rep", effort: "second", cues: cues(p, ["Lower", "Push"]), tempo: [1.8, 0.2, 1.1, 0.4] };
+  return rep(keys, "second", cues(p, ["Lower", "Push"]), [1.8, 0.2, 1.1, 0.4]);
 }
 
 function shrug(p: Params): Motion {
@@ -774,7 +772,7 @@ function shrug(p: Params): Motion {
     const sh = ease(t) * 0.075;
     return { ...b, shrug: sh, hands: pair((i) => hang(b.pelvis, b.torso, i, 0.25, sh)) };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Shrug", "Lower"]), tempo: [0.9, 0.8, 1.6, 0.3] };
+  return rep(keys, "first", cues(p, ["Shrug", "Lower"]), [0.9, 0.8, 1.6, 0.3]);
 }
 
 // ── Trunk ──────────────────────────────────────────────────────────────────
@@ -872,7 +870,7 @@ function trunkFlex(p: Params): Motion {
     }
   });
   const back = style === "backExt" || style === "hyper";
-  return { keys, kind: "rep", effort: "first", cues: cues(p, back ? ["Extend", "Lower"] : ["Crunch", "Release"]), tempo: [1, 0.5, 1.8, 0.3] };
+  return rep(keys, "first", cues(p, back ? ["Extend", "Lower"] : ["Crunch", "Release"]), [1, 0.5, 1.8, 0.3]);
 }
 
 function legRaise(p: Params): Motion {
@@ -909,7 +907,7 @@ function legRaise(p: Params): Motion {
     }
     return { pelvis, torso, hands, elbowPole, feet: feet as [V3, V3], kneePole: kneePole as [V3, V3] };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Raise", "Lower"]), tempo: [1.1, 0.4, 1.8, 0.3] };
+  return rep(keys, "first", cues(p, ["Raise", "Lower"]), [1.1, 0.4, 1.8, 0.3]);
 }
 
 function twist(p: Params): Motion {
@@ -922,7 +920,7 @@ function twist(p: Params): Motion {
       const chest = chestOf(pelvis, torso);
       return { pelvis, torso, hands: pair((_, s) => local(chest, f, [s * 0.17, -0.06, 0.24])), feet: seatedFeet(pelvis) };
     });
-    return { keys, kind: "rep", effort: "first", cues: cues(p, ["Rotate", "Return"]), tempo: [1.1, 0.4, 1.8, 0.3] };
+    return rep(keys, "first", cues(p, ["Rotate", "Return"]), [1.1, 0.4, 1.8, 0.3]);
   }
   const pelvis: V3 = [0, 0.13, 0];
   const keys = sweep(7, (t) => {
@@ -938,7 +936,7 @@ function twist(p: Params): Motion {
       kneePole: pair(() => [0, 1, 0]),
     };
   });
-  return { keys, kind: "rep", effort: "both", cues: cues(p, ["Rotate", "Rotate"]), tempo: [0.9, 0.15, 0.9, 0.15] };
+  return rep(keys, "both", cues(p, ["Rotate", "Rotate"]), [0.9, 0.15, 0.9, 0.15]);
 }
 
 function woodchop(p: Params): Motion {
@@ -956,7 +954,7 @@ function woodchop(p: Params): Motion {
       kneePole: pair((_, s) => [s * 0.3, 0, 1]),
     };
   });
-  return { keys, kind: "rep", effort: "first", cues: cues(p, ["Chop", "Return"]), tempo: [0.9, 0.3, 1.6, 0.3] };
+  return rep(keys, "first", cues(p, ["Chop", "Return"]), [0.9, 0.3, 1.6, 0.3]);
 }
 
 function plank(p: Params): Motion {
@@ -1005,7 +1003,7 @@ function plank(p: Params): Motion {
       toes: pair(() => [0, -0.85, -0.5]),
     };
   });
-  return { keys, kind: "loop", period: 4.4, effort: "both", cues: ["Hold", "Breathe"] };
+  return loop(keys, 4.4, ["Hold", "Breathe"]);
 }
 
 function deadBug(): Motion {
@@ -1025,7 +1023,7 @@ function deadBug(): Motion {
     feet: [reachR ? legLong(0) : legTuck(0), reachL ? legLong(1) : legTuck(1)],
     kneePole: pair(() => [0, 1, 0.4]),
   });
-  return { keys: [pose(false, false), pose(true, false), pose(false, false), pose(false, true)], kind: "loop", period: 5, effort: "both", cues: ["Reach opposite", "Reach opposite"] };
+  return loop([pose(false, false), pose(true, false), pose(false, false), pose(false, true)], 5, ["Reach opposite", "Reach opposite"]);
 }
 
 function mountainClimber(): Motion {
@@ -1042,7 +1040,7 @@ function mountainClimber(): Motion {
     kneePole: pair(() => [0, -1, 0.3]),
     toes: pair(() => [0, -0.85, -0.5]),
   });
-  return { keys: [pose(true), pose(false)], kind: "loop", period: 0.9, effort: "both", cues: ["Drive knees", "Drive knees"] };
+  return loop([pose(true), pose(false)], 0.9, ["Drive knees", "Drive knees"]);
 }
 
 function burpee(): Motion {
@@ -1090,7 +1088,21 @@ function burpee(): Motion {
     pelvis: [0, STAND - 0.03, 0],
     hands: pair((i, s) => add(shoulderOf([0, STAND - 0.03, 0], stand.torso, i), [s * 0.05, -0.3, 0.45])),
   };
-  return { keys: [standPose, squatPose, plankP, squatPose, drive, jump, land], kind: "loop", period: 4.1, effort: "both", cues: ["Down, back, up", "Jump"] };
+  // One key per part, so key i sits at i / 7 along the lap.
+  const at = (i: number) => i / 7;
+  return {
+    keys: [standPose, squatPose, plankP, squatPose, drive, jump, land],
+    kind: "loop",
+    phases: [
+      { name: "squat", to: at(1), time: 0.6, cue: "Squat down", effort: 0.5, breath: "in" },
+      { name: "kick back", to: at(2), time: 0.45, cue: "Kick back", effort: 0.8, breath: "out", ease: "explosive" },
+      { name: "jump in", to: at(3), time: 0.5, cue: "Jump in", effort: 0.8, breath: "in" },
+      { name: "drive", to: at(4), time: 0.55, cue: "Drive", effort: 1, breath: "out", ease: "explosive" },
+      { name: "jump", to: at(5), time: 0.5, cue: "Jump", effort: 1, breath: "out" },
+      { name: "land", to: at(6), time: 0.5, cue: "Land soft", effort: 0.6, breath: "in" },
+      { name: "stand", to: 1, time: 1, cue: "Stand tall", effort: 0.2, breath: "in", ease: "smooth" },
+    ],
+  };
 }
 
 function thruster(p: Params): Motion {
@@ -1114,7 +1126,22 @@ function thruster(p: Params): Motion {
     kneePole: pair((_, s) => [s * 0.35, 0, 1]),
     toes: toesOut(14),
   };
-  return { keys: [overhead, standRack, bottom], kind: "rep", effort: "second", cues: cues(p, ["Lower", "Drive & press"]), tempo: [1.8, 0.1, 1.1, 0.4] };
+  // Path: overhead (0) → rack (0.5) → bottom of the squat (1), and back up.
+  const [down, up] = cues(p, ["", ""]);
+  return {
+    keys: [overhead, standRack, bottom],
+    kind: "rep",
+    rest: 1,
+    positions: { rack: 0.5, bottom: 1, overhead: 0 },
+    phases: [
+      { name: "lower", to: "rack", time: 0.9, cue: down || "Bar to the rack", effort: 0, breath: "in" },
+      { name: "squat", to: "bottom", time: 0.9, cue: down || "Sit into the squat", effort: 0, breath: "in" },
+      { name: "hold", time: 0.1, effort: 0, breath: "hold" },
+      { name: "drive", to: "rack", time: 0.55, cue: up || "Drive up", effort: 1, breath: "out", ease: "explosive" },
+      { name: "press", to: "overhead", time: 0.55, cue: up || "Press", effort: 1, breath: "out" },
+      { name: "rest", time: 0.4, effort: 0, breath: "hold" },
+    ],
+  };
 }
 
 /** Walking / running cycle, used for carries and the treadmill. */
@@ -1142,7 +1169,7 @@ function gait(opts: { y0?: number; stride: number; lift: number; run?: boolean; 
 }
 
 function carry(): Motion {
-  return { keys: gait({ stride: 0.26, lift: 0.08, arms: "carry" }), kind: "loop", period: 1.15, effort: "both", cues: ["Walk tall", "Walk tall"] };
+  return loop(gait({ stride: 0.26, lift: 0.08, arms: "carry" }), 1.15, ["Walk tall", "Walk tall"]);
 }
 
 function cardio(p: Params): Motion {
@@ -1166,7 +1193,7 @@ function cardio(p: Params): Motion {
           toes: pair(() => [0, -0.15, 1]),
         };
       });
-      return { keys, kind: "loop", period: 1, effort: "both", cues: ["Smooth circles", "Smooth circles"] };
+      return loop(keys, 1, ["Smooth circles", "Smooth circles"]);
     }
     case "rower": {
       const feet = stance(0.12, 0.32, 0.27);
@@ -1183,13 +1210,7 @@ function cardio(p: Params): Motion {
         });
         return { pelvis, torso, hands, feet, toes, kneePole: pair((_, s) => [s * 0.15, 1, 0]), elbowPole: pair((_, s) => pole(f, s, -0.5, -1, 0.3)) };
       };
-      return {
-        keys: [pose(-0.18, 26, "long"), pose(-0.5, 22, "long"), pose(-0.54, -16, "in"), pose(-0.54, 18, "long"), pose(-0.35, 24, "long")],
-        kind: "loop",
-        period: 2.6,
-        effort: "both",
-        cues: ["Legs, body, arms", "Arms, body, legs"],
-      };
+      return loop([pose(-0.18, 26, "long"), pose(-0.5, 22, "long"), pose(-0.54, -16, "in"), pose(-0.54, 18, "long"), pose(-0.35, 24, "long")], 2.6, ["Legs, body, arms", "Arms, body, legs"]);
     }
     case "elliptical": {
       const keys = Array.from({ length: 12 }, (_, k): Pose => {
@@ -1205,7 +1226,7 @@ function cardio(p: Params): Motion {
           toes: pair(() => [0, 0, 1]),
         };
       });
-      return { keys, kind: "loop", period: 1.3, effort: "both", cues: ["Push and pull", "Push and pull"] };
+      return loop(keys, 1.3, ["Push and pull", "Push and pull"]);
     }
     case "stairs": {
       const keys = Array.from({ length: 8 }, (_, k): Pose => {
@@ -1220,17 +1241,11 @@ function cardio(p: Params): Motion {
           toes: pair(() => [0, 0, 1]),
         };
       });
-      return { keys, kind: "loop", period: 1.4, effort: "both", cues: ["Steady steps", "Steady steps"] };
+      return loop(keys, 1.4, ["Steady steps", "Steady steps"]);
     }
     default: {
       const run = bool(p, "run", false);
-      return {
-        keys: gait({ y0: 0.17, stride: run ? 0.36 : 0.28, lift: run ? 0.2 : 0.08, run }),
-        kind: "loop",
-        period: run ? 0.72 : 1.1,
-        effort: "both",
-        cues: run ? ["Quick, light steps", "Quick, light steps"] : ["Walk tall", "Walk tall"],
-      };
+      return loop(gait({ y0: 0.17, stride: run ? 0.36 : 0.28, lift: run ? 0.2 : 0.08, run }), run ? 0.72 : 1.1, run ? ["Quick, light steps", "Quick, light steps"] : ["Walk tall", "Walk tall"]);
     }
   }
 }

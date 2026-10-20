@@ -14,8 +14,15 @@ export type V3 = [number, number, number];
 export interface Pose {
   /** Centre of the pelvis. */
   pelvis: V3;
-  /** Torso orientation in degrees: [pitch (+ leans forward), yaw (+ turns left), roll (+ tips to its right)]. */
+  /** Chest orientation in degrees: [pitch (+ leans forward), yaw (+ turns left), roll (+ tips to its right)]. */
   torso: V3;
+  /**
+   * Spine flexion in degrees between pelvis and chest (+ curls forward, − arches
+   * back); the pelvis tilts by the rest of the torso's pitch. The bend is
+   * shared along the lower and upper back. Omit to let the hips do the work
+   * within their range, the spine taking only what they cannot.
+   */
+  spine?: number;
   /** Neck flexion in degrees (+ looks down). */
   head?: number;
   /** Shoulder elevation in metres (shrugs). */

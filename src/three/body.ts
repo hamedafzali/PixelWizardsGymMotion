@@ -1,7 +1,7 @@
 import { MUSCLES } from "../muscles.js";
 import { BODY, sideSign, solve, STAND, type Skeleton } from "../rig.js";
 import type { Muscle, Pose, V3 } from "../types.js";
-import { add, cross, dot, len, mul, norm, sub } from "../vec.js";
+import { add, cross, dist, dot, len, mul, norm, sub } from "../vec.js";
 import { meshField, primDist, refine, type Prim } from "./sdf.js";
 
 // The body is modelled once, in a relaxed A-pose, as a signed distance field:
@@ -23,14 +23,18 @@ export const BONE = {
   thigh: [9, 10],
   shin: [11, 12],
   foot: [13, 14],
+  /** The torso's shapes all belong to `torso` (the chest); skinning shares them out down the spine. */
+  pelvis: 15,
+  lumbar: 16,
+  scap: [17, 18],
 } as const;
-export const MAIN_BONES = 15;
+export const MAIN_BONES = 19;
 
 /** Helper bones: [parent, child, joint] with the joint read off the skeleton. */
 export const HELPERS: { parent: number; child: number; joint: (sk: Skeleton) => V3 }[] = [0, 1].flatMap((i) => [
-  { parent: BONE.torso, child: BONE.upper[i], joint: (sk: Skeleton) => sk.shoulder[i] },
+  { parent: BONE.scap[i], child: BONE.upper[i], joint: (sk: Skeleton) => sk.shoulder[i] },
   { parent: BONE.upper[i], child: BONE.fore[i], joint: (sk: Skeleton) => sk.elbow[i] },
-  { parent: BONE.torso, child: BONE.thigh[i], joint: (sk: Skeleton) => sk.hip[i] },
+  { parent: BONE.pelvis, child: BONE.thigh[i], joint: (sk: Skeleton) => sk.hip[i] },
   { parent: BONE.thigh[i], child: BONE.shin[i], joint: (sk: Skeleton) => sk.knee[i] },
 ]);
 export const BONE_COUNT = MAIN_BONES + HELPERS.length;
@@ -80,6 +84,15 @@ export function boneFrames(sk: Skeleton): BoneFrame[] {
   const f = sk.frame;
   const out: BoneFrame[] = [];
   out[BONE.torso] = { o: sk.pelvis, x: f.left, y: f.up, z: f.fwd };
+  // Spine: the pelvis bone carries the hips and glutes, the lumbar bone sits
+  // half-way between pelvis and chest, so the bend spreads along the back.
+  const pf = sk.pelvisFrame;
+  out[BONE.pelvis] = { o: sk.pelvis, x: pf.left, y: pf.up, z: pf.fwd };
+  const ly = norm(add(pf.up, f.up));
+  const lz = norm(perp(add(pf.fwd, f.fwd), ly));
+  out[BONE.lumbar] = { o: sk.pelvis, x: cross(ly, lz), y: ly, z: lz };
+  // Shoulder blades: the chest frame, glided with the arm.
+  for (const i of [0, 1] as const) out[BONE.scap[i]] = { o: add(sk.pelvis, sk.scap[i]), x: f.left, y: f.up, z: f.fwd };
   const ny = norm(sub(sk.head, sk.chest));
   const nz = frontFor(ny, sk.headFwd, sk);
   out[BONE.neck] = { o: sk.chest, x: cross(ny, nz), y: ny, z: nz };
@@ -202,7 +215,7 @@ const TORSO: Shape[] = [
   E([0, 0.118, 0.088], [0.0055, 0.0065, 0.008], { k: 0.007, sub: true }), // navel
   // Serratus: fingers of muscle along the ribs under the armpit.
   ...[0.255, 0.29, 0.325].map((y) => M(C([0.112, y - 0.012, 0.036], [0.13, y + 0.006, 0.0], 0.011, 0.009, { k: 0.016, muscle: "obliques" }))),
-  M(E([0.104, 0.17, 0.022], [0.042, 0.095, 0.05], { k: 0.05, muscle: "obliques" })),
+  M(E([0.098, 0.17, 0.022], [0.036, 0.095, 0.05], { k: 0.05, muscle: "obliques" })),
   M(E([0.116, 0.315, -0.04], [0.05, 0.13, 0.066], { k: 0.03, muscle: "lats" })),
   M(E([0.075, 0.37, -0.074], [0.075, 0.075, 0.036], { k: 0.025, muscle: "upper back" })),
   M(C([0.0, 0.36, -0.072], [0.1, 0.468, -0.034], 0.045, 0.03, { k: 0.03, muscle: "traps" })),
@@ -528,6 +541,29 @@ export function buildBody(cell = 0.0065): BodyMesh {
       .map((b) => [b, Math.exp(-(((boneDist[b] - dmin) / SIGMA) ** 2))] as [number, number])
       .filter(([, w]) => w > 1e-3);
     if (!ws.length) ws = [[ob, 1]];
+
+    // The torso's share goes down the spine by height (pelvis → lower back →
+    // rib cage), and round each shoulder to its blade.
+    const ti = ws.findIndex(([b]) => b === BONE.torso);
+    if (ti >= 0) {
+      const w = ws[ti][1];
+      ws.splice(ti, 1);
+      const y = toLocal(bind[BONE.torso], p)[1];
+      const wp = 1 - smooth(-0.01, 0.14, y);
+      const wc = smooth(0.15, 0.3, y);
+      let chest = w * wc;
+      for (const i of [0, 1] as const) {
+        const ws_ = chest * (1 - smooth(0.07, 0.18, dist(p, bindSkeleton.shoulder[i])));
+        if (ws_ > 1e-3) ws.push([BONE.scap[i], ws_]);
+        chest -= ws_;
+      }
+      for (const [b, x] of [
+        [BONE.pelvis, w * wp],
+        [BONE.lumbar, w * (1 - wp - wc)],
+        [BONE.torso, chest],
+      ] as const)
+        if (x > 1e-3) ws.push([b, x]);
+    }
 
     // Split parent/child pairs across their helper: (1-s)², 2s(1-s), s².
     for (const [key, hb] of helperOf) {

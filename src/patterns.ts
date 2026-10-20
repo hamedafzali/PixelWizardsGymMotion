@@ -781,7 +781,10 @@ function shrug(p: Params): Motion {
 
 function trunkFlex(p: Params): Motion {
   const style = str(p, "style", "crunch" as "crunch" | "machine" | "cable" | "backExt" | "hyper");
-  const crossed = (chest: V3, f: Frame) => pair((_, s) => local(chest, f, [-s * 0.08, -0.1, 0.13]));
+  // Arms folded across the chest: each hand on the opposite shoulder, the
+  // right forearm over the left.
+  const crossed = (chest: V3, f: Frame) => pair((i, s) => local(chest, f, [-s * 0.12, i ? -0.12 : -0.07, i ? 0.2 : 0.155]));
+  const crossedElbows = (f: Frame) => pair((_, s) => comb([f.fwd, 0.7], [f.up, -1], [f.left, s * 0.25]));
   const keys = sweep(7, (t) => {
     const e = ease(t);
     switch (style) {
@@ -793,6 +796,8 @@ function trunkFlex(p: Params): Motion {
         return {
           pelvis,
           torso,
+          // The curl is in the spine: the pelvis stays flat on the floor.
+          spine: lerp(0, 30, e),
           head: lerp(10, 25, e),
           hands: pair((_, s) => local(chest, f, [s * 0.13, 0.19, -0.03])),
           elbowPole: pair((_, s) => pole(f, s, 0.3, 0, 1)),
@@ -808,6 +813,7 @@ function trunkFlex(p: Params): Motion {
         return {
           pelvis,
           torso,
+          spine: lerp(-2, 30, e),
           head: 10,
           hands: pair((_, s) => local(chest, f, [s * 0.17, 0.05, 0.1])),
           elbowPole: pair((_, s) => pole(f, s, -1, 0.3, 0.3)),
@@ -823,6 +829,8 @@ function trunkFlex(p: Params): Motion {
           ...base("kneeling", 0),
           pelvis,
           torso,
+          // Hips stay high over the knees; the back rounds down.
+          spine: lerp(5, 42, e),
           head: 20,
           hands: pair((_, s) => local(chest, f, [s * 0.07, 0.12, 0.13])),
           elbowPole: pair((_, s) => pole(f, s, -1, 0.3, 0.2)),
@@ -832,7 +840,17 @@ function trunkFlex(p: Params): Motion {
         const pelvis: V3 = [0, 0.53, 0];
         const torso: V3 = [lerp(34, -10, e), 0, 0];
         const f = frameOf(torso);
-        return { pelvis, torso, hands: crossed(chestOf(pelvis, torso), f), feet: seatedFeet(pelvis) };
+        // Rounded over the seat, then the back unrolls to a slight arch; the
+        // pelvis rocks only a little on the seat.
+        return {
+          pelvis,
+          torso,
+          spine: lerp(26, -8, e),
+          head: lerp(18, 0, e),
+          hands: crossed(chestOf(pelvis, torso), f),
+          elbowPole: crossedElbows(f),
+          feet: seatedFeet(pelvis),
+        };
       }
       default: {
         // 45° back extension: legs locked on the bench, torso lifts in line.
@@ -842,8 +860,10 @@ function trunkFlex(p: Params): Motion {
         return {
           pelvis,
           torso,
+          spine: lerp(12, -4, e),
           head: lerp(10, 0, e),
           hands: crossed(chestOf(pelvis, torso), f),
+          elbowPole: crossedElbows(f),
           feet: stance(0.11, -0.62, 0.32),
           kneePole: pair(() => [0, -1, 1]),
           toes: pair(() => [0, -0.7, 0.7]),
@@ -1053,7 +1073,24 @@ function burpee(): Motion {
     feet: stance(0.12, 0, A + 0.14),
     toes: pair(() => [0, -0.6, 0.8]),
   };
-  return { keys: [standPose, squatPose, plankP, squatPose, jump], kind: "loop", period: 3.4, effort: "both", cues: ["Down, back, up", "Jump"] };
+  // Rising out of the squat the arms swing up in front, long, so the hands
+  // travel round the shoulders to overhead rather than through them.
+  const drivePelvis: V3 = [0, STAND - 0.08, -0.05];
+  const driveTorso: V3 = [28, 0, 0];
+  const drive: Pose = {
+    pelvis: drivePelvis,
+    torso: driveTorso,
+    hands: pair((i, s) => add(shoulderOf(drivePelvis, driveTorso, i), [s * 0.04, 0.22, 0.52])),
+    feet: stance(0.13, 0),
+    kneePole: pair((_, s) => [s * 0.2, 0, 1]),
+  };
+  // And they come down in front on the landing.
+  const land: Pose = {
+    ...standPose,
+    pelvis: [0, STAND - 0.03, 0],
+    hands: pair((i, s) => add(shoulderOf([0, STAND - 0.03, 0], stand.torso, i), [s * 0.05, -0.3, 0.45])),
+  };
+  return { keys: [standPose, squatPose, plankP, squatPose, drive, jump, land], kind: "loop", period: 4.1, effort: "both", cues: ["Down, back, up", "Jump"] };
 }
 
 function thruster(p: Params): Motion {

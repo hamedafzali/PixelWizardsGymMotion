@@ -35,6 +35,7 @@ export function lerpPose(a: Pose, b: Pose, t: number): Pose {
   return {
     pelvis: mix(a.pelvis, b.pelvis, t),
     torso: mix(a.torso, b.torso, t),
+    spine: a.spine !== undefined && b.spine !== undefined ? lerp(a.spine, b.spine, t) : undefined,
     head: lerp(a.head ?? 0, b.head ?? 0, t),
     shrug: lerp(a.shrug ?? 0, b.shrug ?? 0, t),
     hands: lerpPair(a.hands, b.hands, t),
@@ -53,6 +54,7 @@ function blendPoses(ps: Pose[], ws: number[]): Pose {
   return {
     pelvis: v((p) => p.pelvis),
     torso: v((p) => p.torso),
+    spine: ps.every((p) => p.spine !== undefined) ? s((p) => p.spine!) : undefined,
     head: s((p) => p.head ?? 0),
     shrug: s((p) => p.shrug ?? 0),
     hands: pr((p) => p.hands),
@@ -110,6 +112,7 @@ function alive(pose: Pose, time: number, breath: number): Pose {
     // The chest lifts and the spine extends a touch on the inhale.
     shrug: (pose.shrug ?? 0) + 0.006 * breath,
     torso: [pose.torso[0] - 0.8 * breath, pose.torso[1] + 0.4 * sway, pose.torso[2]],
+    spine: pose.spine === undefined ? undefined : pose.spine - 0.8 * breath,
     head: (pose.head ?? 0) + 1.2 * sway - 1.5 * breath,
   };
 }

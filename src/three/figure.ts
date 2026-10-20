@@ -191,22 +191,59 @@ const bindInverse: THREE.Matrix4[] = [];
 const basis = (f: BoneFrame, m: THREE.Matrix4) =>
   m.set(f.x[0], f.y[0], f.z[0], f.o[0], f.x[1], f.y[1], f.z[1], f.o[1], f.x[2], f.y[2], f.z[2], f.o[2], 0, 0, 0, 1);
 
-/** Builds the body mesh once; every figure shares it. */
+let pending: Promise<BodyMesh> | null = null;
+
+function install(b: BodyMesh) {
+  body = b;
+  for (const f of b.bind) bindInverse.push(basis(f, new THREE.Matrix4()).invert());
+  shared = {
+    position: new THREE.BufferAttribute(b.position, 3),
+    normal: new THREE.BufferAttribute(b.normal, 3),
+    skinIndex: new THREE.Uint16BufferAttribute(b.skinIndex, 4),
+    skinWeight: new THREE.BufferAttribute(b.skinWeight, 4),
+    flexChannel: new THREE.Uint8BufferAttribute(b.flexChannel, 2),
+    flexA: new THREE.BufferAttribute(b.flexA, 4),
+    flexB: new THREE.BufferAttribute(b.flexB, 4),
+  };
+}
+
+/** Builds the body mesh once; every figure shares it. Blocks for a few seconds the first time unless `preloadBody` ran. */
 export function bodyMesh(): BodyMesh {
-  if (!body) {
-    body = buildBody();
-    for (const f of body.bind) bindInverse.push(basis(f, new THREE.Matrix4()).invert());
-    shared = {
-      position: new THREE.BufferAttribute(body.position, 3),
-      normal: new THREE.BufferAttribute(body.normal, 3),
-      skinIndex: new THREE.Uint16BufferAttribute(body.skinIndex, 4),
-      skinWeight: new THREE.BufferAttribute(body.skinWeight, 4),
-      flexChannel: new THREE.Uint8BufferAttribute(body.flexChannel, 2),
-      flexA: new THREE.BufferAttribute(body.flexA, 4),
-      flexB: new THREE.BufferAttribute(body.flexB, 4),
+  if (!body) install(buildBody());
+  return body!;
+}
+
+/** True once the body mesh is built, so figures appear without a wait. */
+export const bodyReady = (): boolean => body !== null;
+
+/**
+ * Builds the body mesh in a Web Worker so the page stays responsive. Without
+ * workers (Node, a strict CSP, a bundler that cannot load the worker) it
+ * builds on the main thread instead. Safe to call more than once.
+ */
+export function preloadBody(): Promise<BodyMesh> {
+  if (body) return Promise.resolve(body);
+  pending ??= new Promise<BodyMesh>((resolve) => {
+    const here = () => setTimeout(() => resolve(bodyMesh()), 0);
+    if (typeof Worker !== "function") return here();
+    let worker: Worker;
+    try {
+      worker = new Worker(new URL("./body-worker.js", import.meta.url), { type: "module" });
+    } catch {
+      return here();
+    }
+    worker.onmessage = (e: MessageEvent<BodyMesh>) => {
+      worker.terminate();
+      if (!body) install(e.data);
+      resolve(body!);
     };
-  }
-  return body;
+    worker.onerror = (e) => {
+      e.preventDefault();
+      worker.terminate();
+      here();
+    };
+  });
+  return pending;
 }
 
 function paintColours(b: BodyMesh, highlight: Highlight) {

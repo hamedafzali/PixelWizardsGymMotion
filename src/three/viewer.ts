@@ -10,7 +10,7 @@ import { Spring } from "../spring.js";
 import { cycleLength, type Frame } from "../timeline.js";
 import type { ExerciseInput, MotionSpec } from "../types.js";
 import { PALETTE } from "./equipment.js";
-import { dualQuaternionSkinning } from "./figure.js";
+import { bodyReady, dualQuaternionSkinning, preloadBody } from "./figure.js";
 import { GymScene } from "./scene.js";
 import { floorTexture } from "./textures.js";
 
@@ -61,6 +61,9 @@ const FOV = 30;
 const DEFAULT_YAW = 50;
 const YAW_SPRING = { freq: 1.4, damping: 1 };
 
+/** Where the camera looks before the first exercise is shown: a standing figure's height. */
+const EMPTY_FRAMING = { centre: new THREE.Vector3(0, 0.9, 0), radius: 1.1 };
+
 const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 export class GymViewer {
@@ -68,7 +71,10 @@ export class GymViewer {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera = new THREE.PerspectiveCamera(FOV, 1, 0.05, 30);
   readonly three = new THREE.Scene();
-  scene!: GymScene;
+  /** The exercise on show. Undefined until `ready` resolves when the body was still being built. */
+  scene?: GymScene;
+  /** Resolves once the figure is on screen. The body mesh builds in a worker the first time. */
+  readonly ready: Promise<void>;
 
   private opts: GymViewerOptions;
   private playing: boolean;
@@ -87,6 +93,8 @@ export class GymViewer {
   private fog!: THREE.Fog;
   private composer: EffectComposer | null = null;
   private ao: GTAOPass | null = null;
+  private waiting: Parameters<GymViewer["setContent"]>[0] | null = null;
+  private disposed = false;
 
   constructor(
     readonly container: HTMLElement,
@@ -113,8 +121,25 @@ export class GymViewer {
 
     this.lights();
     if ((options.quality ?? "high") === "high") this.postProcessing();
-    this.setContent(options);
-    if (reduce && options.playing === undefined) this.scene.seek(this.scene.peakTime);
+    const first = () => {
+      if (this.scene && reduce && options.playing === undefined) this.scene.seek(this.scene.peakTime);
+    };
+    if (bodyReady()) {
+      this.setContent(options);
+      first();
+      this.ready = Promise.resolve();
+    } else {
+      // Show the empty studio while the body builds off the main thread.
+      if (!options.spec && !options.exercise) throw new Error("GymViewer: pass an `exercise` or a `spec`.");
+      this.waiting = options;
+      this.ready = preloadBody().then(() => {
+        const next = this.waiting;
+        this.waiting = null;
+        if (this.disposed || !next) return;
+        this.setContent(next);
+        first();
+      });
+    }
 
     this.observe();
     if (options.interactive ?? true) this.dragging();
@@ -125,7 +150,13 @@ export class GymViewer {
   // ── Public controls ──────────────────────────────────────────────────────
 
   /** Show another exercise or spec. Keeps the play state and view. */
-  setContent({ exercise, spec, highlight, label }: Pick<GymViewerOptions, "exercise" | "spec" | "highlight" | "label">): void {
+  setContent(content: Pick<GymViewerOptions, "exercise" | "spec" | "highlight" | "label">): void {
+    if (this.waiting) {
+      // Still building the body: show this instead once it is ready.
+      this.waiting = content.spec || content.exercise ? content : { ...content, spec: this.waiting.spec, exercise: this.waiting.exercise };
+      return;
+    }
+    const { exercise, spec, highlight, label } = content;
     const s = spec ?? (exercise ? motionSpecFor(exercise) : this.scene?.spec);
     if (!s) throw new Error("GymViewer: pass an `exercise` or a `spec`.");
     const t = exercise?.primaryMuscle ? { primary: exercise.primaryMuscle, secondary: exercise.secondaryMuscles ?? [] } : musclesFor(s);
@@ -172,13 +203,13 @@ export class GymViewer {
   }
   /** Jump to a time in seconds. */
   seek(time: number): void {
-    this.scene.seek(time);
+    this.scene?.seek(time);
     this.wake();
   }
   /** Seconds per rep, or null for loops and holds. */
   get repSeconds(): number | null {
-    const m = this.scene.motion;
-    if (m.kind !== "rep") return null;
+    const m = this.scene?.motion;
+    if (!m || m.kind !== "rep") return null;
     return cycleLength(m);
   }
 
@@ -205,9 +236,10 @@ export class GymViewer {
   }
 
   dispose(): void {
+    this.disposed = true;
     cancelAnimationFrame(this.raf);
     for (const c of this.cleanups) c();
-    this.scene.dispose();
+    this.scene?.dispose();
     this.ao?.dispose();
     this.composer?.dispose();
     this.three.environment?.dispose();
@@ -294,6 +326,7 @@ export class GymViewer {
 
   /** Keeps the key light's shadow tight around the exercise. */
   private fitShadow() {
+    if (!this.scene) return;
     const { centre, radius } = this.scene.framing;
     const r = radius + 0.7;
     this.key.target.position.copy(centre);
@@ -303,8 +336,8 @@ export class GymViewer {
   }
 
   private placeCamera() {
-    const { centre, radius } = this.scene.framing;
-    const cam = this.scene.spec.camera;
+    const { centre, radius } = this.scene?.framing ?? EMPTY_FRAMING;
+    const cam = this.scene?.spec.camera;
     const pitch = THREE.MathUtils.degToRad(cam?.pitch ?? 14);
     const y = THREE.MathUtils.degToRad(this.yaw.value);
     // Fit the bounding sphere in the narrower of the two fields of view.
@@ -334,8 +367,12 @@ export class GymViewer {
     this.raf = 0;
     const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
-    const f = this.playing ? this.scene.step(dt, this.speed) : this.scene.step(0);
     if (!this.drag) this.yaw.step(this.yawTarget, dt);
+    if (!this.scene) {
+      this.render();
+      return;
+    }
+    const f = this.playing ? this.scene.step(dt, this.speed) : this.scene.step(0);
     if (f.cue !== this.cue) {
       this.cue = f.cue;
       this.opts.onCue?.(f.cue);

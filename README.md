@@ -129,6 +129,7 @@ goes from 0 to 1 as the weight is lifted, eased by a spring.
 - Users who prefer reduced motion get a paused frame at the working end of the rep.
 - Horizontal drags orbit the camera; vertical drags still scroll the page.
 - The viewer renders only while it is on screen and something is moving.
+- The body mesh (about 200k vertices) is built once per page, in a Web Worker, so the page stays responsive. The viewer shows the empty studio until it is ready, and `viewer.ready` resolves when the figure is on screen. Call `preloadBody()` from `pixelwizards-gym-motion/three` early, for example on app start, to have the body ready before the first viewer. Where a worker cannot load (Node, a strict CSP, some bundler setups), the body builds on the main thread instead, which takes about 2 s.
 
 ## Demo
 

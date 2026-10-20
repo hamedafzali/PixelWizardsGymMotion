@@ -58,6 +58,7 @@
   const viewer = new GymViewer(stage, { spec: MOTIONS[new URLSearchParams(location.search).get("id") ?? "e-legpress"], onCue: (c) => ($("cue").textContent = c) });
   stage.prepend(viewer.canvas);
   window.viewer = viewer;
+  $("cue").textContent = viewer.scene ? "" : "Loading…";
 
   function fill() {
     const only = $("machines").checked;
@@ -71,9 +72,11 @@
     viewer.setContent({ spec: { ...MOTIONS[id], device: DEVICE[id] }, label: `Animated 3D guide: ${nice(id)}` });
     $("device").textContent = DEVICE[id] ?? "";
     $("device").hidden = !DEVICE[id];
-    const r = viewer.repSeconds;
-    $("tempo").textContent = r ? `${r.toFixed(1)}s / rep` : "";
-    $("tempo").hidden = !r;
+    viewer.ready.then(() => {
+      const r = viewer.repSeconds;
+      $("tempo").textContent = r ? `${r.toFixed(1)}s / rep` : "";
+      $("tempo").hidden = !r;
+    });
     history.replaceState(null, "", `?id=${id}`);
   }
   $("machines").onchange = () => { fill(); show($("pick").value); };

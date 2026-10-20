@@ -2,7 +2,8 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { EXERCISE_IDS, MOTIONS, solve } from "../dist/index.js";
-import { buildPart, GymScene } from "../dist/three/index.js";
+import { bodyReady, buildPart, GymScene, preloadBody } from "../dist/three/index.js";
+import { readFileSync } from "node:fs";
 
 // No WebGL needed: scenes are plain object graphs.
 
@@ -16,6 +17,30 @@ function finiteGraph(o) {
 }
 
 describe("three.js scene", () => {
+  it("builds the body without a worker where there is none", async () => {
+    assert.equal(typeof Worker, "undefined");
+    const p = preloadBody();
+    assert.equal(bodyReady(), false, "returns before building");
+    const body = await p;
+    assert.ok(bodyReady());
+    assert.equal(await preloadBody(), body, "builds once");
+  });
+
+  it("keeps three.js out of the body worker", () => {
+    // The worker loads body.js and what it imports; none of it may need three.
+    const seen = new Set();
+    const walk = (url) => {
+      if (seen.has(url.href)) return;
+      seen.add(url.href);
+      for (const [, spec] of readFileSync(url, "utf8").matchAll(/^import .* from "([^"]+)";/gm)) {
+        assert.ok(spec.startsWith("."), `${url.pathname} imports ${spec}`);
+        walk(new URL(spec, url));
+      }
+    };
+    walk(new URL("../dist/three/body-worker.js", import.meta.url));
+    assert.ok(seen.size > 3);
+  });
+
   for (const id of EXERCISE_IDS) {
     it(`${id} builds and animates`, () => {
       const scene = new GymScene({ spec: MOTIONS[id], highlight: { chest: 2 } });

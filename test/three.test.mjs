@@ -99,6 +99,27 @@ describe("three.js scene", () => {
     }
   });
 
+  it("puts each crossover handle in its own hand", () => {
+    const scene = new GymScene({ spec: MOTIONS["e-cablefly"] });
+    for (let i = 0; i < 40; i++) scene.step(1 / 30);
+    const sk = scene.skeleton;
+    for (const [from, to, hand] of [[[1.15, 2.05, -0.1], "handL", sk.hand[0]], [[-1.15, 2.05, -0.1], "handR", sk.hand[1]]]) {
+      const built = buildPart({ kind: "cable", from, to, handle: "single", tower: true });
+      built.update(sk, { load: 0.5 });
+      built.object.updateMatrixWorld(true);
+      // The cable's lower end must reach the hand, not the midpoint between the hands.
+      let end = null;
+      built.object.traverse((c) => {
+        if (!c.isMesh || c.geometry.type !== "TorusGeometry") return;
+        end = new THREE.Vector3().setFromMatrixPosition(c.matrixWorld);
+      });
+      assert.ok(end, "has a D-handle");
+      const d = end.distanceTo(new THREE.Vector3(...hand));
+      assert.ok(d < 0.05, `${to} handle ${d.toFixed(2)} m from the hand`);
+    }
+    scene.dispose();
+  });
+
   it("keeps a bike's pedals under the feet", () => {
     const built = buildPart({ kind: "bike" });
     const scene = new GymScene({ spec: MOTIONS["e-bike"] });

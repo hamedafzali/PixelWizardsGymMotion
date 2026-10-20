@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { anchorPoint, type Skeleton } from "../rig.js";
-import type { Part, V3 } from "../types.js";
+import type { Anchor, Part, V3 } from "../types.js";
 import { add, mid, mul, norm, rad, sub } from "../vec.js";
 import { bike, elliptical, stairs, treadmill } from "./cardio.js";
 import { benchBox, padStand, station } from "./stations.js";
@@ -762,8 +762,10 @@ function cableHandle(kind: "bar" | "rope" | "single" | "none") {
   return {
     object: world,
     /** Places the handle; returns where the cable meets it. */
-    update(sk: Skeleton, from: V3): V3 {
-      const hands = mid(sk.hand[0], sk.hand[1]);
+    update(sk: Skeleton, from: V3, to: Anchor = "hands"): V3 {
+      const both = mid(sk.hand[0], sk.hand[1]);
+      // A single handle sits in the hand its cable runs to; bars and ropes span both.
+      const hands = kind === "single" && to !== "hands" ? anchorPoint(sk, to) : both;
       if (kind === "bar") {
         const d = v(sub(sk.hand[0], sk.hand[1]));
         const w = Math.max(d.length() + 0.3, 0.9);
@@ -920,7 +922,7 @@ function cable(p: Part & { kind: "cable" }): Built {
   return {
     object: g,
     update(sk, ctx) {
-      const attach = handle.update(sk, from);
+      const attach = handle.update(sk, from, p.to);
       span(wire, from, attach, 0.006);
       wheel.orient(sub(attach, from), sub(away, from));
       if (stack) {

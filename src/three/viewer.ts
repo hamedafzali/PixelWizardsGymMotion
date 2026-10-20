@@ -10,6 +10,7 @@ import { Spring } from "../spring.js";
 import type { Frame } from "../timeline.js";
 import type { ExerciseInput, MotionSpec } from "../types.js";
 import { PALETTE } from "./equipment.js";
+import { dualQuaternionSkinning } from "./figure.js";
 import { GymScene } from "./scene.js";
 import { floorTexture } from "./textures.js";
 
@@ -279,6 +280,9 @@ export class GymViewer {
     ao.updateGtaoMaterial({ radius: 0.18, distanceExponent: 1.6, thickness: 1.2, scale: 1.1, samples: 16 });
     ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 16 });
     ao.blendIntensity = 0.9;
+    // Its normal pass overrides every material; skin it like the figure.
+    ao.normalMaterial.onBeforeCompile = dualQuaternionSkinning;
+    ao.normalMaterial.customProgramCacheKey = () => "pwgm-normal-dq";
     composer.addPass(ao);
     composer.addPass(new OutputPass());
     // Through the composer the clear colour would be encoded twice; draw the

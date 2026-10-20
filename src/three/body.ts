@@ -2,7 +2,7 @@ import { MUSCLES } from "../muscles.js";
 import { BODY, sideSign, solve, STAND, type Skeleton } from "../rig.js";
 import type { Muscle, Pose, V3 } from "../types.js";
 import { add, cross, dist, dot, len, mul, norm, sub } from "../vec.js";
-import { meshField, primDist, refine, type Prim } from "./sdf.js";
+import { field, meshField, primDist, refine, type Prim } from "./sdf.js";
 
 // The body is modelled once, in a relaxed A-pose, as a signed distance field:
 // bones, muscle bellies and features are ellipsoids and round cones in each
@@ -421,9 +421,21 @@ export interface BodyMesh {
   weightA: Float32Array;
   muscleB: Uint8Array;
   weightB: Float32Array;
+  /**
+   * Muscle flex, baked: per vertex up to two channels (FLEX_CHANNELS, or 255)
+   * and for each the offset of the flexed surface along the normal (w) plus
+   * the change in normal (xyz). The figure scales them by each channel's
+   * activation every frame.
+   */
+  flexChannel: Uint8Array;
+  flexA: Float32Array;
+  flexB: Float32Array;
   bind: BoneFrame[];
   bindSkeleton: Skeleton;
 }
+
+/** One flex channel per muscle and side: `muscle * 2 + side` (side 0 = the figure's left, +x). */
+export const FLEX_CHANNELS = MUSCLES.length * 2;
 
 const SIGMA = 0.02;
 
@@ -672,6 +684,7 @@ export function buildBody(cell = 0.0065): BodyMesh {
 
   // The lip at each hem is a real step now; shade it from the geometry.
   hemNormals(m.position, m.normal, m.index, hem);
+  const flex = bakeFlex(prims, meta, m.position, m.normal, (v) => m.near(v));
 
   return {
     position: m.position,
@@ -684,9 +697,91 @@ export function buildBody(cell = 0.0065): BodyMesh {
     weightA,
     muscleB,
     weightB,
+    ...flex,
     bind,
     bindSkeleton,
   };
+}
+
+/**
+ * A working muscle shortens and thickens: its bellies grow across the bone
+ * (by up to 16%, capped in millimetres for the big ones) and shrink along it.
+ * For every vertex near a muscle this finds where the skin moves to with that
+ * muscle flexed, and how its normal turns, so the shader only has to scale
+ * the offsets.
+ */
+function flexed(s: Prim): Prim {
+  const grow = (r: number) => r + Math.min(r * 0.16, 0.0065);
+  if (s.kind === 0) return { ...s, r: [grow(s.r[0]), s.r[1] * 0.9, grow(s.r[2])] };
+  if (s.kind === 1) return { ...s, ra: grow(s.ra), rb: grow(s.rb) };
+  return s;
+}
+
+function bakeFlex(
+  prims: Prim[],
+  meta: Meta[],
+  pos: Float32Array,
+  nor: Float32Array,
+  near: (v: number) => readonly number[],
+): Pick<BodyMesh, "flexChannel" | "flexA" | "flexB"> {
+  const nv = pos.length / 3;
+  const P = prims.length;
+  const all = [...prims, ...prims.map((s, i) => (meta[s.tag].muscle >= 0 && !s.sub ? flexed(s) : prims[i]))];
+  const flexChannel = new Uint8Array(nv * 2).fill(255);
+  const flexA = new Float32Array(nv * 4);
+  const flexB = new Float32Array(nv * 4);
+  const e = 0.0015;
+  const found: number[] = [];
+  const list: number[] = [];
+  for (let v = 0; v < nv; v++) {
+    const x = pos[v * 3];
+    const y = pos[v * 3 + 1];
+    const z = pos[v * 3 + 2];
+    const ids = near(v);
+    found.length = 0;
+    for (const i of ids) {
+      const mu = meta[prims[i].tag].muscle;
+      if (mu >= 0 && !prims[i].sub && !found.includes(mu) && primDist(prims[i], x, y, z) < 0.03) found.push(mu);
+    }
+    if (!found.length) continue;
+    const d0 = field(prims, ids, x, y, z);
+    const nx = nor[v * 3];
+    const ny = nor[v * 3 + 1];
+    const nz = nor[v * 3 + 2];
+    const side = x >= 0 ? 0 : 1;
+    let best: [number, number, number, number, number][] = [];
+    for (const mu of found) {
+      list.length = 0;
+      for (const i of ids) list.push(meta[prims[i].tag].muscle === mu ? i + P : i);
+      const f = (a: number, b: number, c: number) => field(all, list, a, b, c);
+      // Two Newton steps along the normal onto the flexed surface.
+      let t = d0 - f(x, y, z);
+      t -= f(x + nx * t, y + ny * t, z + nz * t) - d0;
+      t = Math.min(0.009, Math.max(-0.003, t));
+      if (Math.abs(t) < 1e-4) continue;
+      const px = x + nx * t;
+      const py = y + ny * t;
+      const pz = z + nz * t;
+      const a = f(px + e, py - e, pz - e);
+      const b = f(px - e, py - e, pz + e);
+      const c = f(px - e, py + e, pz - e);
+      const d = f(px + e, py + e, pz + e);
+      let gx = a - b - c + d;
+      let gy = -a - b + c + d;
+      let gz = -a + b - c + d;
+      const gl = Math.hypot(gx, gy, gz) || 1;
+      gx /= gl;
+      gy /= gl;
+      gz /= gl;
+      best.push([mu * 2 + side, gx - nx, gy - ny, gz - nz, t]);
+    }
+    best = best.sort((p, q) => Math.abs(q[4]) - Math.abs(p[4])).slice(0, 2);
+    best.forEach(([ch, ...o], j) => {
+      flexChannel[v * 2 + j] = ch;
+      (j ? flexB : flexA).set(o, v * 4);
+    });
+  }
+  return { flexChannel, flexA, flexB };
 }
 
 function smooth(a: number, b: number, x: number) {

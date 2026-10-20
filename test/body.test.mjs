@@ -2,8 +2,9 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
 import { MOTIONS, resolveMotion, solve } from "../dist/index.js";
-import { bodyMesh, buildFigure } from "../dist/three/figure.js";
-import { BONE_COUNT, PAINT_COUNT } from "../dist/three/body.js";
+import { bodyMesh, buildFigure, dualQuaternionSkinning } from "../dist/three/figure.js";
+import { BONE_COUNT, FLEX_CHANNELS, PAINT_COUNT } from "../dist/three/body.js";
+import { MUSCLES } from "../dist/muscles.js";
 
 describe("procedural body", () => {
   const t0 = performance.now();
@@ -62,5 +63,28 @@ describe("procedural body", () => {
       assert.ok(out.y > -0.1 && out.y < 2.2, `vertex ${v} at y ${out.y}`);
     }
     f.dispose();
+  });
+
+  it("bakes bounded muscle flex on both sides", () => {
+    const biceps = MUSCLES.indexOf("biceps");
+    const out = [0, 0];
+    for (let v = 0; v < nv; v++)
+      for (let j = 0; j < 2; j++) {
+        const ch = b.flexChannel[v * 2 + j];
+        if (ch === 255) continue;
+        assert.ok(ch < FLEX_CHANNELS);
+        const o = (j ? b.flexB : b.flexA).subarray(v * 4, v * 4 + 4);
+        assert.ok(o[3] >= -0.0031 && o[3] <= 0.0091, `vertex ${v} moves ${o[3]}`);
+        assert.ok(Math.hypot(o[0], o[1], o[2]) < 2.01);
+        if (ch >> 1 === biceps && o[3] > 0.003) out[ch & 1]++;
+      }
+    assert.ok(out[0] > 100 && out[1] > 100, `biceps bulge on ${out}`);
+  });
+
+  it("replaces every skinning chunk with dual quaternions", () => {
+    const shader = { vertexShader: THREE.ShaderLib.physical.vertexShader, uniforms: {} };
+    dualQuaternionSkinning(shader);
+    for (const c of ["skinnormal_vertex", "skinning_vertex"]) assert.ok(!shader.vertexShader.includes(`#include <${c}>`), c);
+    assert.ok(shader.vertexShader.includes("dqRotate(dqReal, transformed)"));
   });
 });

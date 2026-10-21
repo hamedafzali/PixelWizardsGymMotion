@@ -340,7 +340,8 @@ function kickback(p: Params): Motion {
 function hipThrust(p: Params): Motion {
   const floor = bool(p, "floor", false);
   const bar = str(p, "hold", "bar" as "bar" | "floor" | "handles");
-  const chest: V3 = floor ? [0, 0.11, -0.5] : [0, 0.58, -0.5];
+  // On the floor the chest joint sits a back's depth above the mat.
+  const chest: V3 = floor ? [0, 0.15, -0.5] : [0, 0.58, -0.5];
   const [from, to] = floor ? [-90, -124] : [-55, -92];
   const keys = sweep(5, (t) => {
     const torso: V3 = [lerp(from, to, ease(t)), 0, 0];
@@ -529,12 +530,13 @@ function row(p: Params): Motion {
       posture = {
         pelvis: [0.06, 0.8, -0.12],
         torso: [80, 80],
+        // Left knee and shin flat on the bench top (0.44), the knee under the hip.
         feet: [
-          [0.2, 0.53, -0.5],
+          [0.2, 0.5, -0.19],
           [-0.22, A, 0.06],
         ],
         kneePole: [
-          [0, -1, 0.3],
+          [0, -0.3, 1],
           [0, 0, 1],
         ],
       };

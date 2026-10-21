@@ -88,6 +88,8 @@ export function hipFlexion(f: Frame, hip: V3, knee: V3): number {
 
 /** How far the hips flex and extend before the lower back has to help (degrees). */
 export const HIP_RANGE = [-12, 112] as const;
+/** Lowest the knee joint goes: a kneecap resting on the floor. */
+export const KNEE_FLOOR = 0.06;
 
 /**
  * Spine flexion the legs force on a neutral back: past the hips' range the
@@ -123,7 +125,7 @@ export function scapula(f: Frame, i: 0 | 1, upperArm: V3, straight: number): V3 
  * Two-bone IK. Places the middle joint so the chain reaches `target` (or as
  * close as the bones allow) and bends towards `pole`.
  */
-export function twoBone(root: V3, target: V3, l1: number, l2: number, pole: V3): { joint: V3; end: V3 } {
+export function twoBone(root: V3, target: V3, l1: number, l2: number, pole: V3, minY = -Infinity): { joint: V3; end: V3 } {
   let to = sub(target, root);
   let d = len(to);
   const max = (l1 + l2) * 0.999;
@@ -138,7 +140,24 @@ export function twoBone(root: V3, target: V3, l1: number, l2: number, pole: V3):
   let perp = sub(pole, mul(dir, dot(pole, dir)));
   if (len(perp) < 1e-6) perp = Math.abs(dir[1]) < 0.9 ? cross(dir, [0, 1, 0]) : cross(dir, [1, 0, 0]);
   perp = norm(perp);
-  return { joint: comb([root, 1], [dir, a], [perp, h]), end: add(root, to) };
+  const c = comb([root, 1], [dir, a]);
+  // Below `minY` (a knee in the floor) the joint swings round the chain's
+  // axis, as little as it can, until it clears.
+  if (c[1] + perp[1] * h < minY && h > 1e-6) {
+    const w = cross(dir, perp);
+    const R = Math.hypot(perp[1], w[1]);
+    const phi = Math.atan2(w[1], perp[1]);
+    const k = (minY - c[1]) / (h * Math.max(R, 1e-9));
+    let th = phi;
+    if (k < 1) {
+      const lo = phi - Math.acos(k);
+      const hi = phi + Math.acos(k);
+      const wrap = (x: number) => Math.atan2(Math.sin(x), Math.cos(x));
+      th = Math.abs(wrap(lo)) < Math.abs(wrap(hi)) ? lo : hi;
+    }
+    perp = comb([perp, Math.cos(th)], [w, Math.sin(th)]);
+  }
+  return { joint: comb([c, 1], [perp, h]), end: add(root, to) };
 }
 
 export interface Skeleton {
@@ -271,7 +290,7 @@ export function solve(pose: Pose): Skeleton {
     const pf = pelvisFrameOf(pose.torso, spine);
     const hip = [0, 1].map((i) => hipOf(pose.pelvis, pose.torso, i as 0 | 1, spine)) as [V3, V3];
     const solved = ([0, 1] as const).map((i) =>
-      twoBone(hip[i], pose.feet[i], BODY.thigh, BODY.shin, pose.kneePole?.[i] ?? defaultKneePole(f, i)),
+      twoBone(hip[i], pose.feet[i], BODY.thigh, BODY.shin, pose.kneePole?.[i] ?? defaultKneePole(f, i), KNEE_FLOOR),
     );
     return { pf, hip, solved };
   };

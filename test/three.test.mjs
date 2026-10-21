@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import * as THREE from "three";
-import { anchorPoint, EXERCISE_IDS, MOTIONS, solve } from "../dist/index.js";
+import { anchorPoint, cycleLength, EXERCISE_IDS, MOTIONS, solve } from "../dist/index.js";
 import { bodyReady, buildPart, GymScene, preloadBody } from "../dist/three/index.js";
 import { readFileSync } from "node:fs";
 
@@ -151,6 +151,32 @@ describe("three.js scene", () => {
       if (!widest || s.x > widest.x) widest = s;
     });
     assert.ok(widest.x > 0.8 && widest.y < 0.1, `bar ${widest.x.toFixed(2)}×${widest.y.toFixed(2)}`);
+  });
+});
+
+describe("contacts", () => {
+  // Every marked place where equipment meets the body holds over a whole cycle:
+  // grips in hands, pads on limbs, soles on decks.
+  it("keeps every exercise's contacts touching over a cycle", () => {
+    const bad = [];
+    for (const id of EXERCISE_IDS) {
+      const scene = new GymScene({ spec: MOTIONS[id] });
+      const T = cycleLength(scene.motion);
+      for (let k = 0; k < 12; k++) {
+        scene.seek((k / 12) * T);
+        for (const c of scene.contacts()) if (!c.ok) bad.push(`${id}@${(k / 12).toFixed(2)} ${c.part} ${c.limb} gap ${c.gap.toFixed(3)} deepest ${c.deepest.toFixed(3)} (${c.deepLimb})`);
+      }
+      scene.dispose();
+    }
+    assert.deepEqual(bad, []);
+  });
+
+  it("marks held equipment", () => {
+    for (const p of [{ kind: "dumbbell", to: "handL" }, { kind: "kettlebell", to: "hands" }, { kind: "barbell" }, { kind: "cable", from: [0, 2, 0.5], handle: "single", to: "hands" }]) {
+      let marks = 0;
+      buildPart(p).object.traverse((o) => (marks += o.userData.contacts?.length ?? 0));
+      assert.ok(marks > 0, `${p.kind} declares no contacts`);
+    }
   });
 });
 

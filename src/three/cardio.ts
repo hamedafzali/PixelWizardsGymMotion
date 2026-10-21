@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { anchorPoint, type Skeleton } from "../rig.js";
 import type { V3 } from "../types.js";
 import { add, mid } from "../vec.js";
+import { BOTH, touch } from "./contact.js";
 import { G, M, beam, cushion, mesh, rbox, rod, roundedGeo, span, v, xRod, type Built } from "./equipment.js";
 
 // Cardio machines. Each is laid out around the path its exercise drives (the
@@ -50,7 +51,8 @@ export function treadmill(): Built {
     g.add(rbox([s * 0.36, 0.165, -0.94], [0.1, 0.03, 0.04], m.accent, 0, 0.008));
   }
   g.add(rbox([0, 0.13, -0.05], [0.62, 0.05, L - 0.06], m.frame, 0, 0.01));
-  g.add(rbox([0, 0.165, -0.05], [0.56, 0.012, L - 0.1], m.grip, 0, 0.004));
+  // The belt: a foot is always on it, or just leaving it at a running stride's float.
+  g.add(touch(rbox([0, 0.165, -0.05], [0.56, 0.012, L - 0.1], m.grip, 0, 0.004), BOTH.soles, { box: [0.28, 0.006, (L - 0.1) / 2], gap: 0.12 }));
   for (const z of [-0.05 - L / 2 + 0.06, -0.05 + L / 2 - 0.3]) {
     const r = xRod(0.58, 0.035, m.steel);
     r.position.set(0, 0.135, z);
@@ -81,9 +83,9 @@ export function bike(): Built {
   g.add(beam([0, 0.06, -0.42], crank, 0.07), beam(crank, [0, 0.06, 0.72], 0.07));
   g.add(beam([0, 0.3, 0.37], [0, 0.98, 0.5], 0.075));
   // Seat post with an adjust knob, and the saddle.
-  g.add(beam([0, 0.38, 0.12], [0, 0.78, -0.08], 0.06), beam([0, 0.75, -0.07], [0, 0.78, -0.08], 0.05));
+  g.add(beam([0, 0.38, 0.12], [0, 0.72, -0.08], 0.06), beam([0, 0.69, -0.07], [0, 0.72, -0.08], 0.05));
   g.add(rbox([0, 0.55, 0.06], [0.03, 0.03, 0.05], m.accent, 0, 0.01));
-  g.add(cushion([0, 0.81, -0.1], [0.2, 0.06, 0.16]), cushion([0, 0.81, 0.02], [0.1, 0.05, 0.14]));
+  g.add(touch(cushion([0, 0.75, -0.1], [0.2, 0.06, 0.16]), "seat", { box: [0.1, 0.03, 0.08] }), cushion([0, 0.75, 0.02], [0.1, 0.05, 0.14]));
   // Flywheel under a shroud, in front of the crank.
   const fly = xRod(0.08, 0.26, m.shroud, G().disc);
   fly.position.set(0, 0.44, 0.56);
@@ -104,7 +106,10 @@ export function bike(): Built {
   g.add(hub, chainring);
   const arms = [mesh(roundedGeo([1, 1, 1], 0.2), m.chrome), mesh(roundedGeo([1, 1, 1], 0.2), m.chrome)];
   const pedals = [rbox([0, 0, 0], [0.09, 0.025, 0.11], m.grip, 0, 0.008), rbox([0, 0, 0], [0.09, 0.025, 0.11], m.grip, 0, 0.008)];
-  pedals.forEach((p) => (p.name = "bike:pedal"));
+  pedals.forEach((p, i) => {
+    p.name = "bike:pedal";
+    touch(p, i === 0 ? "soleL" : "soleR", { box: [0.045, 0.0125, 0.055] });
+  });
   g.add(...arms, ...pedals);
   return {
     object: g,

@@ -3,8 +3,9 @@ import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeom
 import { toCreasedNormals } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { anchorPoint, type Skeleton } from "../rig.js";
 import type { Anchor, Part, V3 } from "../types.js";
-import { add, mid, mul, norm, rad, sub } from "../vec.js";
+import { add, cross, mid, mul, norm, rad, sub } from "../vec.js";
 import { bike, elliptical, stairs, treadmill } from "./cardio.js";
+import { AXIS, BOTH, settle, touch, touchEach, type Limb } from "./contact.js";
 import { benchBox, padStand, station } from "./stations.js";
 import { labelTexture, repeated, surfaceMaps } from "./textures.js";
 
@@ -300,6 +301,55 @@ export const group = (...parts: THREE.Object3D[]) => {
 const turnTowardsOrigin = (x: number, z: number) => Math.atan2(-x, -z);
 export const yawOf = (sk: Skeleton) => Math.atan2(sk.frame.fwd[0], sk.frame.fwd[2]);
 
+/** Anything the body can rest on: a bench takes a back, a knee or a hand. */
+export const SUPPORT: readonly Limb[] = ["back", "front", "seat", "thighL", "thighR", "shinL", "shinR", "soleL", "soleR", "handL", "handR", "forearmL", "forearmR", "upperArmL", "upperArmR"];
+
+/**
+ * The limbs a part following `a` meets, one list per limb that must touch:
+ * a grip is held, a pad presses on the limb around the joint, a plate is
+ * stood on.
+ */
+export function limbsAt(a: Anchor, surface: "grip" | "pad" | "foot"): Limb[][] {
+  const side = (l: string, r: string, b: Anchor): Limb[][] =>
+    a === b ? ([[l], [r]] as Limb[][]) : a.endsWith("L") ? [[l as Limb]] : [[r as Limb]];
+  switch (a) {
+    case "handL":
+    case "handR":
+    case "hands":
+      return side("handL", "handR", "hands");
+    case "elbowL":
+      return [["forearmL", "upperArmL"]];
+    case "elbowR":
+      return [["forearmR", "upperArmR"]];
+    case "kneeL":
+      return [["thighL", "shinL"]];
+    case "kneeR":
+      return [["thighR", "shinR"]];
+    case "knees":
+      return [["thighL", "shinL"], ["thighR", "shinR"]];
+    case "footL":
+      return surface === "foot" ? [["soleL"]] : [["shinL", "soleL"]];
+    case "footR":
+      return surface === "foot" ? [["soleR"]] : [["shinR", "soleR"]];
+    case "feet":
+      return surface === "foot" ? [["soleL"], ["soleR"]] : [["shinL", "soleL"], ["shinR", "soleR"]];
+    case "pelvis":
+      return [["seat"]];
+    case "chest":
+      return [["front"]];
+    case "upperBack":
+      return [["back"]];
+    case "shoulders":
+      return [["shoulderL"], ["shoulderR"]];
+  }
+}
+
+/** Marks `on` for every limb list `limbsAt` gives. */
+export function touchAt<T extends THREE.Object3D>(on: T, a: Anchor, surface: "grip" | "pad" | "foot", o: Parameters<typeof touch>[2] = {}): T {
+  for (const l of limbsAt(a, surface)) touch(on, l, o);
+  return on;
+}
+
 // ── Weight stack ───────────────────────────────────────────────────────────
 
 const stackGeos = new Map<string, THREE.BufferGeometry>();
@@ -566,7 +616,7 @@ function barbell(style: "straight" | "ez" | "trap", length: number, plates: bool
       g.add(rod([Math.cos(a0) * r, 0, Math.sin(a0) * r * 1.15], [Math.cos(a1) * r, 0, Math.sin(a1) * r * 1.15], 0.018, m.chrome));
     }
     for (const s of [1, -1]) {
-      g.add(rod([s * 0.27, 0, -0.1], [s * 0.27, 0, 0.1], 0.017, m.grip));
+      g.add(touch(rod([s * 0.27, 0, -0.1], [s * 0.27, 0, 0.1], 0.017, m.grip), s === 1 ? "handL" : "handR", AXIS));
       g.add(rod([s * 0.36, 0, 0], [s * 0.95, 0, 0], 0.025, m.chrome));
       if (plates) {
         const p = plateDisc(0.225, 0.06, 20);
@@ -575,7 +625,7 @@ function barbell(style: "straight" | "ez" | "trap", length: number, plates: bool
       }
     }
   } else {
-    g.add(xRod(length, 0.014, m.steel));
+    g.add(touchEach(xRod(length, 0.014, m.steel), BOTH.hands, AXIS));
     const big = length >= 1.8;
     const sleeve = big ? 0.42 : 0.2;
     // Knurled grips: a smooth gap in the middle, smooth again by the collars.
@@ -659,6 +709,9 @@ function dumbbell(to: "handL" | "handR" | "hands", kg = 12): Built {
       g.add(l);
     }
   }
+  // One hand round the grip; held in both, the palms cup the top head.
+  if (to === "hands") touchEach(g, BOTH.hands, { a: [-(inner + len), 0, 0], b: [inner + len, 0, 0], r: r, gap: 0.06 });
+  else touch(g, to, { a: [-0.052, 0, 0], b: [0.052, 0, 0] });
   return {
     object: g,
     update(sk) {
@@ -732,11 +785,18 @@ function kettlebell(p: Part & { kind: "kettlebell" }): Built {
   const kg = new THREE.Mesh(sphereDecalGeo(0.0992, 0.04, 0.012), label("16", 1).material);
   kg.position.y = -0.13;
   g.add(bell, handle, kg);
+  // The grip is at the origin; hung from a belt, nothing holds it.
+  // Held in one hand round the grip, in two each hand takes its own horn.
+  if (p.to === "hands") {
+    touch(g, "handL", { a: [0.012, 0, 0], b: [0.06, -0.04, 0], r: 0.0125 });
+    touch(g, "handR", { a: [-0.012, 0, 0], b: [-0.06, -0.04, 0], r: 0.0125 });
+  } else if (p.to.startsWith("hand")) touchAt(g, p.to, "grip", { a: [-0.035, 0, 0], b: [0.035, 0, 0], r: 0.0125 });
   return {
     object: g,
     update(sk) {
-      g.position.copy(v(add(anchorPoint(sk, p.to), p.offset ?? [0, 0, 0])));
       g.rotation.y = yawOf(sk);
+      const off = p.offset ?? [0, 0, 0];
+      settle(sk, add(anchorPoint(sk, p.to), off), off, g, (at) => g.position.copy(v(at)));
     },
   };
 }
@@ -744,7 +804,7 @@ function kettlebell(p: Part & { kind: "kettlebell" }): Built {
 // ── Cables ─────────────────────────────────────────────────────────────────
 
 /** Lat bar, D-handle or rope at the end of a cable. */
-function cableHandle(kind: "bar" | "rope" | "single" | "none") {
+function cableHandle(kind: "bar" | "rope" | "single" | "none", to: Anchor) {
   const m = M();
   const g = new THREE.Group();
   const shaft = xRod(1, 0.013, m.chrome);
@@ -753,11 +813,20 @@ function cableHandle(kind: "bar" | "rope" | "single" | "none") {
   const knobs = [mesh(G().sphere, m.grip), mesh(G().sphere, m.grip)];
   const dRing = mesh(new THREE.TorusGeometry(0.06, 0.008, 8, 24, Math.PI), m.chrome);
   const dGrip = mesh(G().cyl, m.grip);
+  // One handle in both hands is a V-handle: a parallel grip for each.
+  const vee = kind === "single" && to === "hands";
+  const vGrips = [mesh(G().cyl, m.grip), mesh(G().cyl, m.grip)];
+  const vArms = [mesh(G().cyl, m.chrome), mesh(G().cyl, m.chrome)];
+  touchEach(shaft, BOTH.hands, AXIS);
+  if (vee) vGrips.forEach((k, i) => touch(k, i === 0 ? "handL" : "handR", AXIS));
+  else touchAt(dGrip, to, "grip", AXIS);
+  knobs.forEach((k, i) => touch(k, i === 0 ? "handL" : "handR", { r: 0.024 }));
   if (kind === "bar") g.add(shaft, ...grips);
-  if (kind === "single") g.add(dRing, dGrip);
+  if (kind === "single" && !vee) g.add(dRing, dGrip);
   const world = new THREE.Group();
   world.add(g);
   if (kind === "rope") for (const r of [...ropes, ...knobs]) world.add(r);
+  if (vee) for (const r of [...vGrips, ...vArms]) world.add(r);
   for (const k of knobs) k.scale.setScalar(0.024);
   return {
     object: world,
@@ -775,6 +844,20 @@ function cableHandle(kind: "bar" | "rope" | "single" | "none") {
         grips[0]!.position.x = w / 2 - 0.11;
         grips[1]!.position.x = -(w / 2 - 0.11);
         return hands;
+      }
+      if (vee) {
+        const toward = norm(sub(from, both));
+        const attach = add(both, mul(toward, 0.15));
+        const across = sub(sk.hand[0], sk.hand[1]);
+        let along = cross(Math.hypot(...across) > 0.02 ? across : sk.frame.left, toward);
+        if (Math.hypot(...along) < 1e-3) along = sk.frame.up;
+        along = norm(along);
+        for (const i of [0, 1] as const) {
+          const h = sk.hand[i];
+          span(vGrips[i]!, add(h, mul(along, -0.06)), add(h, mul(along, 0.06)), 0.016);
+          span(vArms[i]!, attach, add(h, mul(toward, 0.02)), 0.011);
+        }
+        return attach;
       }
       if (kind === "single") {
         g.position.copy(v(hands));
@@ -836,7 +919,7 @@ function cable(p: Part & { kind: "cable" }): Built {
   const g = new THREE.Group();
   const from = p.from;
   const wire = mesh(G().cyl, m.cable, false);
-  const handle = cableHandle(p.handle ?? "none");
+  const handle = cableHandle(p.handle ?? "none", p.to ?? "hands");
   const wheel = pulley();
   wheel.object.position.copy(v(from));
   g.add(wire, handle.object, wheel.object);
@@ -993,14 +1076,23 @@ function lever(p: Part & { kind: "lever" }): Built {
   else if (end === "pad") tip = mesh(roundedGeo([0.24, 0.06, 0.2], 0.025), m.pad);
   else if (end === "handle") tip = width ? xRod(width, 0.016, m.grip) : mesh(G().cyl, m.grip);
   if (tip) g.add(tip);
+  if (end === "handle" && tip) touchAt(tip, p.to, "grip", AXIS);
+  if (end === "roller" && tip) touchAt(tip, p.to, "pad", { a: [-(width || 0.36) / 2, 0, 0], b: [(width || 0.36) / 2, 0, 0], r: 0.05 });
+  if (end === "pad" && tip) touchAt(tip, p.to, "pad", { box: [0.12, 0.03, 0.1] });
   return {
     object: g,
     update(sk) {
-      const at = add(anchorPoint(sk, p.to), p.offset ?? [0, 0, 0]);
-      span(arm, p.pivot, at, 1);
-      if (!tip) return;
-      if (end === "handle" && !width) span(tip, add(at, [0, -0.07, 0]), add(at, [0, 0.07, 0]), 0.019);
-      else tip.position.copy(v(at));
+      const off = p.offset ?? [0, 0, 0];
+      const place = (at: V3) => {
+        span(arm, p.pivot, at, 1);
+        if (!tip) return;
+        if (end === "handle" && !width) span(tip, add(at, [0, -0.07, 0]), add(at, [0, 0.07, 0]), 0.019);
+        else tip.position.copy(v(at));
+      };
+      // A tip with a contact rests on its limb; a bare arm keeps its offset.
+      // Grips go to the hand; pads and rollers rest on their limb on the offset's side.
+      if (tip && end !== "handle") settle(sk, add(anchorPoint(sk, p.to), off), off, tip, place, 0.005);
+      else place(add(anchorPoint(sk, p.to), off));
     },
   };
 }
@@ -1026,7 +1118,7 @@ function sled(p: Part & { kind: "sled" }): Built {
 
   const carriage = new THREE.Group();
   carriage.add(rbox([0, 0, 0], [0.62, 0.5, 0.04], m.shroud, 0, 0.015)); // moulded back panel
-  carriage.add(rbox([0, 0, -0.03], [0.58, 0.46, 0.014], m.grip, 0, 0.006)); // non-slip foot plate
+  carriage.add(touchAt(rbox([0, 0, -0.03], [0.58, 0.46, 0.014], m.grip, 0, 0.006), p.to, "foot", { box: [0.29, 0.23, 0.007] })); // non-slip foot plate
   carriage.add(rbox([0, -0.12, 0.08], [0.5, 0.06, 0.14], m.frame, 0, 0.01));
   for (const s of [1, -1]) {
     const horn = xRod(0.26, 0.024, m.chrome);
@@ -1078,6 +1170,7 @@ function bench(p: Part & { kind: "bench" }): Built {
   const c = add(add(at, mul(d, L / 2)), mul(n, -t / 2));
   const back = cushion(c, [0.3, t, L]);
   back.rotation.x = inc;
+  touch(back, SUPPORT, { box: [0.15, t / 2, L / 2] });
   g.add(back);
   // Frame: a spine under the pads, legs with wide feet at both ends.
   const lowY = at[1] - t - 0.02;
@@ -1096,7 +1189,7 @@ function seat(p: Part & { kind: "seat" }): Built {
   const g = new THREE.Group();
   const at = p.at;
   const w = p.width ?? 0.42;
-  g.add(cushion([at[0], at[1] - 0.04, at[2] + 0.08], [w, 0.08, 0.4]));
+  g.add(touch(cushion([at[0], at[1] - 0.04, at[2] + 0.08], [w, 0.08, 0.4]), "seat", { box: [w / 2, 0.04, 0.2] }));
   g.add(beam([at[0], at[1] - 0.08, at[2] + 0.05], [at[0], 0.04, at[2] + 0.05], 0.07));
   g.add(rbox([at[0], 0.025, at[2]], [0.5, 0.05, 0.7], m.frame, 0, 0.012));
   if (p.back !== undefined) {
@@ -1116,11 +1209,15 @@ function pad(p: Part & { kind: "pad" }): Built {
   const o = p.roller
     ? group(xRod(p.size[0], p.size[1] / 2 + 0.012, m.pad), xRod(p.size[0] + 0.02, 0.012, m.chrome))
     : cushion([0, 0, 0], p.size);
+  if (p.roller) touchAt(o, p.to, "pad", { a: [-p.size[0] / 2, 0, 0], b: [p.size[0] / 2, 0, 0], r: p.size[1] / 2 + 0.012 });
+  else touchAt(o, p.to, "pad", { box: mul(p.size, 0.5) });
   return {
     object: o,
     update(sk) {
-      o.position.copy(v(add(anchorPoint(sk, p.to), p.offset ?? [0, 0, 0])));
       if (!p.roller) o.rotation.set(rad(p.tilt ?? 0), yawOf(sk), 0);
+      // The offset picks the side; the pad slides along it onto the limb.
+      const off = p.offset ?? [0, 0, 0];
+      settle(sk, add(anchorPoint(sk, p.to), off), off, o, (at) => o.position.copy(v(at)), 0.005);
     },
   };
 }
@@ -1172,7 +1269,7 @@ function smith(p: Part & { kind: "smith" }): Built {
 function pullupBar(p: Part & { kind: "pullupBar" }): Built {
   const m = M();
   const z = p.z ?? 0.04;
-  const bar = xRod(1.3, 0.016, m.chrome);
+  const bar = touchEach(xRod(1.3, 0.016, m.chrome), BOTH.hands, AXIS);
   bar.position.set(0, p.height, z);
   const g = group(bar);
   for (const s of [1, -1]) {
@@ -1190,7 +1287,7 @@ function dipBars(p: Part & { kind: "dipBars" }): Built {
   const z = p.z ?? 0.05;
   const g = new THREE.Group();
   for (const s of [1, -1]) {
-    g.add(rod([s * 0.27, p.height, z - 0.25], [s * 0.27, p.height, z + 0.35], 0.02, m.grip));
+    g.add(touch(rod([s * 0.27, p.height, z - 0.25], [s * 0.27, p.height, z + 0.35], 0.02, m.grip), s === 1 ? "handL" : "handR", AXIS));
     g.add(post(s * 0.33, z - 0.25, p.height, 0.06), post(s * 0.33, z + 0.35, p.height, 0.06));
     g.add(beam([s * 0.27, p.height, z - 0.25], [s * 0.33, p.height, z - 0.25], 0.04));
     g.add(beam([s * 0.27, p.height, z + 0.35], [s * 0.33, p.height, z + 0.35], 0.04));
@@ -1212,7 +1309,9 @@ export function buildPart(p: Part): Built {
     case "seat":
       return seat(p);
     case "box":
-      return { object: rbox(p.at, p.size, tone(p.tone ?? "frame"), p.tilt ?? 0, Math.min(...p.size) * 0.2) };
+      // A floor mat lets the body leave it (jumps); a raised box must stay in reach.
+      const floor = p.at[1] + p.size[1] / 2 < 0.06;
+      return { object: touch(rbox(p.at, p.size, tone(p.tone ?? "frame"), p.tilt ?? 0, Math.min(...p.size) * 0.2), SUPPORT, { box: mul(p.size, 0.5), gap: floor ? 0.15 : 0.04 }) };
     case "pad":
       return pad(p);
     case "barbell":
@@ -1232,6 +1331,7 @@ export function buildPart(p: Part): Built {
     case "platform": {
       const o = group(rbox([0, 0, 0], [0.72, 0.62, 0.035], m.frame, 0, 0.012), rbox([0, 0, 0.02], [0.66, 0.56, 0.01], m.grip, 0, 0.004));
       o.rotation.x = rad(p.tilt);
+      touchAt(o, p.to, "foot", { box: [0.36, 0.31, 0.03] });
       return { object: o, update: (sk) => o.position.copy(v(add(anchorPoint(sk, p.to), p.offset ?? [0, 0, 0]))) };
     }
     case "rack":

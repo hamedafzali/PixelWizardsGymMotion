@@ -66,7 +66,7 @@ export interface BoneFrame {
 const perp = (a: V3, axis: V3): V3 => sub(a, mul(axis, dot(a, axis)));
 
 /** Front direction for a bone: the hint, fading to the torso frame as it degenerates. */
-function frontFor(axis: V3, hint: V3, sk: Skeleton): V3 {
+export function frontFor(axis: V3, hint: V3, sk: Skeleton): V3 {
   const h = perp(hint, axis);
   const s = len(h);
   const w = Math.min(1, s / 0.04);

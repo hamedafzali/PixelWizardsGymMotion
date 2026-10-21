@@ -5,6 +5,7 @@ import { solve, type Skeleton } from "../rig.js";
 import { Spring, type SpringSpec } from "../spring.js";
 import { peakTime, sample, type Frame } from "../timeline.js";
 import type { Motion, MotionSpec, Part } from "../types.js";
+import { measureContacts, type ContactGap } from "./contact.js";
 import { buildPart, type Built } from "./equipment.js";
 import { buildFigure, type Figure } from "./figure.js";
 
@@ -118,6 +119,18 @@ export class GymScene {
     const ctx = { load: dt > 0 ? this.load.step(f.load, dt) : this.load.value };
     for (const p of this.parts) p.update?.(sk, ctx);
     return f;
+  }
+
+  /**
+   * Where equipment meets the body this frame: every grip, pedal, pad and
+   * seat a part marks, with the gap to the body surface it belongs against.
+   */
+  contacts(): (ContactGap & { part: string })[] {
+    return this.parts.flatMap((p, i) => {
+      const e = this.equipment[i]!;
+      const part = e.kind === "station" ? `station:${e.type}` : e.kind;
+      return measureContacts(p.object, this.skeleton).map((c) => ({ ...c, part }));
+    });
   }
 
   /** Frees the figure's geometry and material. Equipment shares cached geometry. */

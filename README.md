@@ -138,6 +138,27 @@ whole machines:
 - Cardio (`treadmill`, `bike`, `elliptical`, `stairs`) drives cranks, pedal arms
   and stepper pedals from the feet.
 
+## Contacts
+
+Every part marks where a body surface belongs on it: a grip in a hand, a pad
+on a shin, a saddle under the seat, a deck under the soles. `GymScene.contacts()`
+measures each mark against the body this frame and reports the gap (positive
+apart, negative pressed in) and whether it holds. The tests sweep every
+exercise over a full cycle, so a hand that misses its handle or a pad that
+sinks into a limb fails the build instead of shipping.
+
+```ts
+for (const c of scene.contacts()) if (!c.ok) console.warn(c.part, c.limb, c.gap);
+```
+
+Parts that follow the body rest on it. A pad, lever roller or kettlebell's
+`offset` gives the side it sits on; `settle()` then slides it along that
+direction until it just touches the limb, so it meets the skin at any body
+size or pose. Grips go straight to the hand. Custom parts can declare their
+own marks with `touch(object, limbs, { a, b, r })` or a box
+(`{ box: halfExtents }`), and `measureContacts` / `limbCapsule` give the raw
+numbers. The rig also keeps the knees above the floor (`KNEE_FLOOR`).
+
 ## Accessibility and performance
 
 - The canvas has `role="img"` and a descriptive label.

@@ -1,0 +1,20 @@
+name: Bug
+description: Something renders or moves wrong, or the API misbehaves.
+labels: [bug]
+body:
+  - type: input
+    id: exercise
+    attributes:
+      label: Exercise id (if any)
+      placeholder: e-legpress
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected
+      description: A screenshot or short clip helps a lot.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Browser, device and package version

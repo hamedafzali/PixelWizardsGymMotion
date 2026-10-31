@@ -1,0 +1,15 @@
+name: Exercise request
+description: Ask for an exercise or machine the catalog does not have.
+labels: [exercise]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Exercise
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: Equipment and how it is done
+      description: A link to a video or photo of the machine is ideal.

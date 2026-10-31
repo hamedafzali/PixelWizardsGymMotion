@@ -1,7 +1,7 @@
 {
   "name": "pixelwizards-gym-motion",
   "version": "0.1.0",
-  "description": "3D gym exercise animations from plain data: an anatomical body simulator with IK, muscle highlighting and gym machines (leg press, lat pulldown, cable stack, Smith machine…) for 114 exercises. Core has zero dependencies; three.js renderer and React component optional.",
+  "description": "3D gym exercise animations from plain data: an anatomical body simulator with IK, muscle highlighting and gym machines (leg press, lat pulldown, cable stack, Smith machine\u2026) for 114 exercises. Core has zero dependencies; three.js renderer and React component optional.",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/hamedafzali/PixelWizardsGymMotion.git"
@@ -39,6 +39,7 @@
   },
   "files": [
     "dist",
+    "src",
     "README.md",
     "CHANGELOG.md"
   ],

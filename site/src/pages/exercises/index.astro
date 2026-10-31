@@ -1,0 +1,84 @@
+---
+import Base from "../../layouts/Base.astro";
+import { EXERCISES, REGIONS } from "../../data/exercises";
+const count = EXERCISES.length;
+---
+<Base title="Exercises" description={`All ${count} animated 3D gym exercises: machines, cables, free weights, bodyweight and cardio.`}>
+  <section class="head">
+    <div class="wrap">
+      <p class="eyebrow">Catalog</p>
+      <h1>{count} exercises</h1>
+      <p class="muted lead">Every one is a few lines of data you can copy, change or replace.</p>
+      <div class="filters">
+        <label class="search"><span class="sr">Search exercises</span><input id="q" type="search" placeholder="Search — squat, cable, chest…" autocomplete="off" /></label>
+        <div class="chips" role="group" aria-label="Body region">
+          <button class="chip" data-region="" aria-pressed="true">All</button>
+          {REGIONS.map((r) => <button class="chip" data-region={r} aria-pressed="false">{r}</button>)}
+        </div>
+        <label class="mach"><input id="machines" type="checkbox" /> Machines only</label>
+      </div>
+    </div>
+  </section>
+  <section class="list">
+    <div class="wrap">
+      <p id="shown" class="muted small" aria-live="polite">{count} shown</p>
+      <ul class="cards">
+        {EXERCISES.map((e) => (
+          <li data-region={e.region} data-machine={e.device ? "1" : ""} data-text={`${e.name} ${e.device ?? ""} ${e.primary} ${e.secondary.join(" ")} ${e.region}`.toLowerCase()}>
+            <a href={`/exercises/${e.slug}`} class="card ex">
+              <img src={`/posters/${e.slug}.jpg`} alt="" width="640" height="400" loading="lazy" decoding="async" />
+              <span class="meta">
+                <span class="name">{e.name}</span>
+                <span class="sub">{e.device && e.device !== e.name ? e.device : e.region} · {e.primary}</span>
+              </span>
+            </a>
+          </li>
+        ))}
+      </ul>
+      <p id="none" class="muted" hidden>No exercises match. Try another word or region.</p>
+    </div>
+  </section>
+</Base>
+<style>
+  .head { padding: 48px 0 8px; }
+  .lead { margin: 0 0 24px; }
+  .filters { display: flex; flex-direction: column; gap: 14px; }
+  .search input { width: 100%; max-width: 480px; min-height: 46px; background: var(--bg-2); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 10px 16px; font: inherit; }
+  .search input:focus { border-color: var(--accent); outline: none; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mach { color: var(--muted); display: inline-flex; gap: 8px; align-items: center; font-size: 15px; }
+  .mach input { accent-color: var(--accent); width: 18px; height: 18px; }
+  .list { padding-top: 16px; }
+  .small { font-size: 14px; margin: 0 0 14px; }
+  .cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+  .ex { display: block; overflow: hidden; text-decoration: none; transition: border-color .15s, transform .15s; }
+  .ex:hover { border-color: #3a5170; transform: translateY(-2px); }
+  .ex img { aspect-ratio: 16 / 10; width: 100%; object-fit: cover; background: var(--bg-2); }
+  .meta { display: block; padding: 12px 14px 14px; }
+  .name { display: block; font-weight: 650; }
+  .sub { display: block; color: var(--muted); font-size: 14px; text-transform: none; }
+</style>
+<script>
+  const q = document.getElementById("q") as HTMLInputElement;
+  const machines = document.getElementById("machines") as HTMLInputElement;
+  const items = [...document.querySelectorAll<HTMLLIElement>(".cards li")];
+  let region = new URLSearchParams(location.search).get("region") ?? "";
+  function apply() {
+    const words = q.value.toLowerCase().split(/\s+/).filter(Boolean);
+    let n = 0;
+    for (const li of items) {
+      const ok = (!region || li.dataset.region === region) && (!machines.checked || li.dataset.machine) && words.every((w) => li.dataset.text!.includes(w));
+      li.hidden = !ok;
+      if (ok) n++;
+    }
+    document.getElementById("shown")!.textContent = `${n} shown`;
+    document.getElementById("none")!.hidden = n > 0;
+    for (const c of document.querySelectorAll<HTMLButtonElement>("[data-region]")) c.setAttribute("aria-pressed", String(c.dataset.region === region));
+  }
+  for (const c of document.querySelectorAll<HTMLButtonElement>("[data-region]"))
+    c.addEventListener("click", () => { region = c.dataset.region!; apply(); });
+  q.addEventListener("input", apply);
+  machines.addEventListener("change", apply);
+  apply();
+</script>

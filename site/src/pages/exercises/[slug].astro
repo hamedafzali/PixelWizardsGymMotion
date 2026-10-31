@@ -1,0 +1,100 @@
+---
+import Base from "../../layouts/Base.astro";
+import { EXERCISES } from "../../data/exercises";
+import { MOTIONS } from "pixelwizards-gym-motion";
+export function getStaticPaths() {
+  return EXERCISES.map((e, i) => ({ params: { slug: e.slug }, props: { e, prev: EXERCISES[i - 1], next: EXERCISES[i + 1] } }));
+}
+const { e, prev, next } = Astro.props;
+const spec = JSON.stringify(MOTIONS[e.id], null, 2);
+const related = EXERCISES.filter((o) => o.region === e.region && o.id !== e.id).slice(0, 4);
+---
+<Base title={e.name} description={`${e.name} as an animated 3D guide${e.device ? ` on the ${e.device.toLowerCase()}` : ""}. Works the ${e.primary}${e.secondary.length ? `, with ${e.secondary.join(", ")}` : ""}.`} image={`/posters/${e.slug}.jpg`}>
+  <section class="ex">
+    <div class="wrap">
+      <nav class="crumbs" aria-label="Breadcrumb"><a href="/exercises">Exercises</a> <span aria-hidden="true">/</span> <a href={`/exercises?region=${encodeURIComponent(e.region)}`}>{e.region}</a></nav>
+      <div class="layout">
+        <div>
+          <div class="stage" id="stage" data-id={e.id}>
+            <img class="poster" src={`/posters/${e.slug}.jpg`} alt="" width="1280" height="800" fetchpriority="high" />
+            <p class="tag cue" aria-live="polite"></p><p class="tag tempo"></p><p class="tag device"></p>
+          </div>
+          <div class="controls">
+            <button class="btn sm" data-act="play" aria-pressed="false">Pause</button>
+            <button class="btn sm" data-act="speed">1×</button>
+            <span class="spacer"></span>
+            <button class="btn sm" data-act="view:front" aria-pressed="false">Front</button>
+            <button class="btn sm" data-act="view:angle" aria-pressed="true">3/4</button>
+            <button class="btn sm" data-act="view:side" aria-pressed="false">Side</button>
+          </div>
+          <p class="muted hint">Drag to orbit.</p>
+        </div>
+        <aside>
+          <h1>{e.name}</h1>
+          <dl>
+            {e.device && <><dt>Equipment</dt><dd>{e.device}</dd></>}
+            <dt>Main muscle</dt><dd class="cap">{e.primary}</dd>
+            {e.secondary.length > 0 && <><dt>Also works</dt><dd class="cap">{e.secondary.join(", ")}</dd></>}
+            <dt>Id</dt><dd><code>{e.id}</code></dd>
+          </dl>
+          <a class="btn primary" href={`/playground?id=${e.id}`}>Edit in playground</a>
+        </aside>
+      </div>
+    </div>
+  </section>
+  <section class="use">
+    <div class="wrap">
+      <h2>Use it</h2>
+      <pre><code>{`import { MOTIONS } from "pixelwizards-gym-motion";
+import { GymViewer } from "pixelwizards-gym-motion/three";
+
+new GymViewer(document.querySelector("#stage"), { spec: MOTIONS["${e.id}"] });`}</code></pre>
+      <details>
+        <summary>Show the motion spec</summary>
+        <pre><code>{spec}</code></pre>
+      </details>
+    </div>
+  </section>
+  {related.length > 0 && (
+    <section class="more">
+      <div class="wrap">
+        <h2>More {e.region.toLowerCase()} exercises</h2>
+        <ul class="rel">
+          {related.map((o) => <li><a class="card" href={`/exercises/${o.slug}`}><img src={`/posters/${o.slug}.jpg`} alt="" width="640" height="400" loading="lazy" /><span>{o.name}</span></a></li>)}
+        </ul>
+        <div class="pn">
+          {prev ? <a class="btn sm" href={`/exercises/${prev.slug}`}>← {prev.name}</a> : <span />}
+          {next && <a class="btn sm" href={`/exercises/${next.slug}`}>{next.name} →</a>}
+        </div>
+      </div>
+    </section>
+  )}
+</Base>
+<style>
+  .ex { padding: 28px 0 24px; }
+  .crumbs { color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+  .crumbs a { color: var(--muted); text-decoration: none; }
+  .crumbs a:hover { color: var(--ink); }
+  .layout { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 36px; align-items: start; }
+  .hint { font-size: 13px; margin: 8px 0 0; }
+  h1 { font-size: clamp(30px, 4vw, 42px); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 10px 18px; margin: 20px 0 28px; }
+  dt { color: var(--muted); }
+  dd { margin: 0; }
+  .cap { text-transform: capitalize; }
+  .use, .more { padding: 32px 0; }
+  details { margin-top: 8px; }
+  summary { cursor: pointer; color: var(--muted); margin-bottom: 12px; min-height: 44px; display: flex; align-items: center; }
+  details pre { max-height: 480px; }
+  .rel { list-style: none; padding: 0; margin: 0 0 24px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .rel a { display: block; overflow: hidden; text-decoration: none; }
+  .rel img { aspect-ratio: 16 / 10; width: 100%; object-fit: cover; }
+  .rel span { display: block; padding: 10px 12px; font-weight: 600; font-size: 15px; }
+  .pn { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); gap: 20px; } .rel { grid-template-columns: 1fr 1fr; } }
+</style>
+<script>
+  import { mountPlayer } from "../../scripts/player";
+  const stage = document.getElementById("stage")!;
+  mountPlayer(stage, stage.dataset.id!, () => document.querySelector("h1")?.textContent ?? "");
+</script>

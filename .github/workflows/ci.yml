@@ -16,3 +16,6 @@ jobs:
       # Builds, then runs every test including the contact sweep over all exercises.
       - run: npm test
       - run: npm pack --dry-run
+      # The website links the package from the repo root, so it builds against this commit.
+      - run: npm ci && npm run build
+        working-directory: site

@@ -1,0 +1,20 @@
+---
+import Base from "../layouts/Base.astro";
+import { Content } from "../../../README.md";
+---
+<Base title="Docs" description="Install, embed and extend Gym Motion: the core API, the three.js viewer, the React component and the motion spec format.">
+  <article class="docs wrap">
+    <Content />
+  </article>
+</Base>
+<style>
+  .docs { max-width: 820px; padding-top: 40px; padding-bottom: 64px; }
+  .docs :global(h1) { font-size: clamp(30px, 4vw, 42px); }
+  .docs :global(h2) { margin-top: 48px; padding-top: 16px; border-top: 1px solid var(--line); }
+  .docs :global(h3) { margin-top: 28px; }
+  .docs :global(p), .docs :global(li) { line-height: 1.65; }
+  .docs :global(table) { width: 100%; border-collapse: collapse; display: block; overflow-x: auto; font-size: 15px; }
+  .docs :global(th), .docs :global(td) { border-bottom: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+  .docs :global(img) { max-width: 100%; height: auto; }
+  .docs :global(pre.astro-code) { background: var(--panel) !important; border: 1px solid var(--line); }
+</style>

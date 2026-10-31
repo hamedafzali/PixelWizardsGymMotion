@@ -173,6 +173,16 @@ numbers. The rig also keeps the knees above the floor (`KNEE_FLOOR`).
 npm run demo        # builds, serves examples/index.html, opens the browser
 ```
 
+## Website
+
+The site at [motion.trainova.eu.cc](https://motion.trainova.eu.cc) lives in
+`site/` and is built with Astro against the package in this repo.
+
+```sh
+cd site && npm install && npm run dev
+npm run posters -- legpress   # re-render an exercise's still after changing it
+```
+
 ## License
 
 MIT

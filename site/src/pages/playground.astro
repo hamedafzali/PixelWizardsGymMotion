@@ -1,0 +1,109 @@
+---
+import Base from "../layouts/Base.astro";
+import { EXERCISES } from "../data/exercises";
+const first = EXERCISES[0];
+---
+<Base title="Playground" description="Edit an exercise's motion spec and watch the 3D guide change live.">
+  <section class="pg">
+    <div class="wrap">
+      <p class="eyebrow">Playground</p>
+      <h1>Change the data, watch the motion.</h1>
+      <p class="muted lead">Pick an exercise, then edit its spec. Try a slower <code>time</code>, a new <code>cue</code>, or a different <code>pattern</code>.</p>
+      <div class="layout">
+        <div>
+          <div class="stage" id="stage" data-id={first.id}>
+            <img class="poster" src={`/posters/${first.slug}.jpg`} alt="" width="1280" height="800" />
+            <p class="tag cue" aria-live="polite"></p><p class="tag tempo"></p><p class="tag device"></p>
+          </div>
+          <div class="controls">
+            <button class="btn sm" data-act="play" aria-pressed="false">Pause</button>
+            <button class="btn sm" data-act="speed">1×</button>
+            <span class="spacer"></span>
+            <button class="btn sm" data-act="view:front" aria-pressed="false">Front</button>
+            <button class="btn sm" data-act="view:angle" aria-pressed="true">3/4</button>
+            <button class="btn sm" data-act="view:side" aria-pressed="false">Side</button>
+          </div>
+        </div>
+        <div class="editor">
+          <label for="pick">Start from</label>
+          <select id="pick">
+            {EXERCISES.map((e) => <option value={e.id}>{e.name}</option>)}
+          </select>
+          <label for="spec">Motion spec (JSON)</label>
+          <textarea id="spec" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+          <p id="status" class="status" role="status"></p>
+          <div class="row">
+            <button class="btn sm" id="reset">Reset</button>
+            <button class="btn sm" id="share">Copy share link</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+</Base>
+<style>
+  .pg { padding: 40px 0 56px; }
+  h1 { font-size: clamp(28px, 4vw, 40px); }
+  .lead { margin: 0 0 28px; }
+  .layout { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 28px; align-items: start; }
+  .editor { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+  label { color: var(--muted); font-size: 14px; margin-top: 6px; }
+  select, textarea { background: var(--bg-2); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; font: inherit; }
+  select { min-height: 46px; padding: 0 12px; }
+  textarea { min-height: 380px; padding: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.5; resize: vertical; tab-size: 2; }
+  select:focus, textarea:focus { border-color: var(--accent); outline: none; }
+  textarea.bad { border-color: #ff6b6b; }
+  .status { min-height: 1.4em; margin: 0; font-size: 14px; color: var(--muted); }
+  .status.bad { color: #ff8a8a; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  @media (max-width: 900px) { .layout { grid-template-columns: minmax(0, 1fr); } textarea { min-height: 300px; } }
+</style>
+<script>
+  import { MOTIONS, PATTERN_IDS } from "pixelwizards-gym-motion";
+  import { mountPlayer } from "../scripts/player";
+  import { EXERCISES } from "../data/exercises";
+  const name = (id: string) => EXERCISES.find((e) => e.id === id)?.name ?? id;
+  const pick = document.getElementById("pick") as HTMLSelectElement;
+  const area = document.getElementById("spec") as HTMLTextAreaElement;
+  const status = document.getElementById("status")!;
+  const stage = document.getElementById("stage")!;
+
+  // A shared link carries the id and the edited spec in the hash.
+  let id = new URLSearchParams(location.search).get("id") ?? stage.dataset.id!;
+  let spec: unknown = MOTIONS[id];
+  try {
+    const h = location.hash.slice(1);
+    if (h) { const d = JSON.parse(decodeURIComponent(atob(h))); if (MOTIONS[d.id]) { id = d.id; spec = d.spec; } }
+  } catch {}
+  if (!MOTIONS[id]) { id = stage.dataset.id!; spec = MOTIONS[id]; }
+  pick.value = id;
+  area.value = JSON.stringify(spec, null, 2);
+  const player = mountPlayer(stage, id, name);
+  if (spec !== MOTIONS[id]) player.show(id, spec);
+
+  function say(text: string, bad = false) { status.textContent = text; status.classList.toggle("bad", bad); area.classList.toggle("bad", bad); }
+  let timer = 0;
+  area.addEventListener("input", () => {
+    clearTimeout(timer);
+    timer = window.setTimeout(() => {
+      let next;
+      try { next = JSON.parse(area.value); } catch (e) { return say(`JSON error: ${(e as Error).message}`, true); }
+      if (!PATTERN_IDS.includes(next?.pattern)) return say(`Unknown pattern "${next?.pattern}". Try one of: ${PATTERN_IDS.join(", ")}.`, true);
+      try { player.show(id, next); spec = next; say("Applied."); } catch (e) { say(`Spec error: ${(e as Error).message}`, true); }
+    }, 350);
+  });
+  function load(next: string) {
+    id = next; spec = MOTIONS[id];
+    area.value = JSON.stringify(spec, null, 2);
+    player.show(id); say("");
+    history.replaceState(null, "", `?id=${id}`);
+  }
+  pick.addEventListener("change", () => load(pick.value));
+  document.getElementById("reset")!.addEventListener("click", () => load(id));
+  document.getElementById("share")!.addEventListener("click", async (ev) => {
+    const b = ev.currentTarget as HTMLButtonElement;
+    const url = `${location.origin}/playground#${btoa(encodeURIComponent(JSON.stringify({ id, spec })))}`;
+    try { await navigator.clipboard.writeText(url); b.textContent = "Copied"; } catch { history.replaceState(null, "", url); b.textContent = "Link in address bar"; }
+    setTimeout(() => (b.textContent = "Copy share link"), 1800);
+  });
+</script>

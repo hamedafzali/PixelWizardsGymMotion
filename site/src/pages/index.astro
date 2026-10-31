@@ -1,0 +1,135 @@
+---
+import Base from "../layouts/Base.astro";
+import { EXERCISES } from "../data/exercises";
+const featured = ["e-legpress", "e-cablefly", "e-pulldown", "e-deadlift", "e-burpee"].map((id) => EXERCISES.find((e) => e.id === id)!);
+const count = EXERCISES.length;
+const machines = EXERCISES.filter((e) => e.device).length;
+const features = [
+  ["A body, not a mannequin", "A sculpted, skinned figure with a real spine, shoulder blades and joint limits. Worked muscles light up and flex under load."],
+  ["Machines that move with you", "Weight stacks rise each rep, cables run through their pulleys, levers swing on their pivots and pedals follow the feet."],
+  ["Contact you can trust", "Every grip, pad, seat and pedal declares where the body belongs. A test plays each exercise through and fails on any gap."],
+  ["Plain data in, motion out", "An exercise is a few lines of JSON: a movement pattern, its equipment and named phases with time, cue, effort and breath."],
+  ["Zero-dependency core", "Poses, IK and timing are pure TypeScript. Use the three.js renderer, the React component, or draw the skeleton yourself."],
+  ["Made to be embedded", "Renders only while visible, respects reduced motion, builds the body in a Web Worker and labels itself for screen readers."],
+];
+---
+<Base title="Gym Motion" description={`Animated 3D guides for ${count} gym exercises — machines, free weights and bodyweight — from plain data. Open source, for three.js and React.`}>
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div class="copy">
+        <p class="eyebrow">Open source · three.js · React</p>
+        <h1>Gym exercises in 3D, <span class="hl">from plain data.</span></h1>
+        <p class="lead">{count} animated exercises with {machines} working machines, a muscle-highlighting body and coaching cues. Drop it into any web app.</p>
+        <div class="install">
+          <code id="cmd">npm i pixelwizards-gym-motion three</code>
+          <button class="copy-btn" data-copy="#cmd" aria-label="Copy install command">Copy</button>
+        </div>
+        <div class="ctas">
+          <a class="btn primary" href="/exercises">Browse all {count} exercises</a>
+          <a class="btn" href="/docs">Read the docs</a>
+        </div>
+      </div>
+      <div class="show">
+        <div class="stage" id="hero-stage" data-id={featured[0].id}>
+          <img class="poster" src={`/posters/${featured[0].slug}.jpg`} alt="" width="1280" height="800" fetchpriority="high" />
+          <p class="tag cue" aria-live="polite"></p><p class="tag tempo"></p><p class="tag device"></p>
+        </div>
+        <div class="picks" role="group" aria-label="Featured exercise">
+          {featured.map((e, i) => <button class="chip" data-pick={e.id} aria-pressed={i === 0 ? "true" : "false"}>{e.name}</button>)}
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="wrap">
+      <p class="eyebrow">What you get</p>
+      <h2>Built like an engine, not a clip library.</h2>
+      <div class="grid fgrid">
+        {features.map(([h, p]) => <div class="card f"><h3>{h}</h3><p class="muted">{p}</p></div>)}
+      </div>
+    </div>
+  </section>
+
+  <section class="code">
+    <div class="wrap code-grid">
+      <div>
+        <p class="eyebrow">A few lines to a guide</p>
+        <h2>One component. Any exercise.</h2>
+        <p class="muted">Pass an exercise id, or your own spec. The viewer handles the camera, lighting, orbiting, cues and pausing when it scrolls out of view.</p>
+        <a class="btn" href="/playground">Try it in the playground</a>
+      </div>
+      <div>
+<pre><code><span class="k">import</span> {"{"} MOTIONS {"}"} <span class="k">from</span> <span class="s">"pixelwizards-gym-motion"</span>;
+<span class="k">import</span> {"{"} GymMotion {"}"} <span class="k">from</span> <span class="s">"pixelwizards-gym-motion/react"</span>;
+
+<span class="k">export function</span> <span class="f">Guide</span>() {"{"}
+  <span class="k">return</span> &lt;<span class="f">GymMotion</span> spec={"{"}MOTIONS[<span class="s">"e-legpress"</span>]{"}"} /&gt;;
+{"}"}</code></pre>
+<pre><code><span class="c">// Or your own movement, as data</span>
+{"{"}
+  <span class="s">"pattern"</span>: <span class="s">"row"</span>,
+  <span class="s">"params"</span>: {"{"} <span class="s">"style"</span>: <span class="s">"cable"</span> {"}"},
+  <span class="s">"equipment"</span>: [{"{"} <span class="s">"kind"</span>: <span class="s">"cable"</span>, <span class="s">"from"</span>: [0, 0.3, 1], <span class="s">"to"</span>: <span class="s">"hands"</span> {"}"}],
+  <span class="s">"phases"</span>: [{"{"} <span class="s">"to"</span>: 1, <span class="s">"time"</span>: 1, <span class="s">"cue"</span>: <span class="s">"Pull"</span>, <span class="s">"breath"</span>: <span class="s">"out"</span> {"}"}, …]
+{"}"}</code></pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="built">
+    <div class="wrap card built-card">
+      <div>
+        <p class="eyebrow">Built with Gym Motion</p>
+        <h2>Trainova</h2>
+        <p class="muted">A strength training tracker that shows every exercise in 3D while you log your sets.</p>
+      </div>
+      <a class="btn primary" href="https://trainova.eu.cc/">Open Trainova</a>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .hero { padding: 48px 0 64px; }
+  .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 48px; align-items: center; }
+  .hl { color: var(--accent); }
+  .lead { font-size: 19px; color: var(--muted); max-width: 46ch; margin: 0 0 24px; }
+  .install { display: flex; align-items: center; gap: 8px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 12px; padding: 6px 6px 6px 16px; max-width: 440px; margin-bottom: 20px; }
+  .install code { background: none; border: 0; padding: 0; flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font-size: 14px; }
+  .install code::before { content: "$ "; color: var(--muted); }
+  .copy-btn { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: inherit; font-size: 13px; cursor: pointer; min-height: 36px; }
+  .ctas { display: flex; flex-wrap: wrap; gap: 10px; }
+  .picks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .fgrid { grid-template-columns: repeat(3, 1fr); margin-top: 28px; }
+  .f { padding: 22px; }
+  .f p { margin: 0; font-size: 15px; }
+  .features { border-top: 1px solid #ffffff0a; }
+  .code-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: 48px; align-items: center; }
+  .k { color: #c792ea; } .s { color: var(--accent); } .f { } .c { color: var(--muted); }
+  pre .f { color: #82aaff; padding: 0; }
+  .built-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 32px; flex-wrap: wrap; background: linear-gradient(120deg, #131f12 0%, var(--panel) 55%); }
+  .built-card p { margin: 0; max-width: 52ch; }
+  @media (max-width: 900px) {
+    .hero-grid, .code-grid { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+    .fgrid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 560px) { .fgrid { grid-template-columns: 1fr; } section { padding: 48px 0; } }
+</style>
+
+<script>
+  import { mountPlayer } from "../scripts/player";
+  import { EXERCISES } from "../data/exercises";
+  const name = (id: string) => EXERCISES.find((e) => e.id === id)?.name ?? id;
+  const stage = document.getElementById("hero-stage")!;
+  const player = mountPlayer(stage, stage.dataset.id!, name);
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-pick]"))
+    b.addEventListener("click", () => {
+      player.show(b.dataset.pick!);
+      for (const o of document.querySelectorAll("[data-pick]")) o.setAttribute("aria-pressed", String(o === b));
+    });
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-copy]"))
+    b.addEventListener("click", async () => {
+      const text = document.querySelector(b.dataset.copy!)?.textContent ?? "";
+      try { await navigator.clipboard.writeText(text); b.textContent = "Copied"; setTimeout(() => (b.textContent = "Copy"), 1500); } catch {}
+    });
+</script>

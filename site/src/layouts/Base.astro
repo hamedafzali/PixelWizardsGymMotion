@@ -1,0 +1,80 @@
+---
+import "../styles/global.css";
+interface Props { title: string; description: string; image?: string }
+const { title, description, image = "/og.jpg" } = Astro.props;
+const path = Astro.url.pathname;
+const nav = [
+  ["/exercises", "Exercises"],
+  ["/playground", "Playground"],
+  ["/docs", "Docs"],
+];
+const full = title === "Gym Motion" ? "Gym Motion — 3D gym exercises from plain data" : `${title} — Gym Motion`;
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{full}</title>
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#0a1119" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="canonical" href={new URL(path, Astro.site)} />
+    <meta property="og:title" content={full} />
+    <meta property="og:description" content={description} />
+    <meta property="og:image" content={new URL(image, Astro.site)} />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="top">
+      <div class="wrap bar">
+        <a class="logo" href="/" aria-label="Gym Motion home"><span class="dot"></span>Gym Motion</a>
+        <nav aria-label="Main">
+          {nav.map(([href, label]) => <a href={href} aria-current={path.startsWith(href) ? "page" : undefined}>{label}</a>)}
+          <a class="gh" href="https://github.com/hamedafzali/PixelWizardsGymMotion" rel="noopener">GitHub</a>
+        </nav>
+      </div>
+    </header>
+    <main id="main"><slot /></main>
+    <footer class="foot">
+      <div class="wrap cols">
+        <div>
+          <a class="logo" href="/"><span class="dot"></span>Gym Motion</a>
+          <p class="muted">Procedural 3D exercise animation by PixelWizards. MIT licensed. No third-party models or motion capture.</p>
+        </div>
+        <div>
+          <p class="h">Project</p>
+          <a href="/exercises">Exercises</a><a href="/playground">Playground</a><a href="/docs">Docs</a>
+          <a href="https://github.com/hamedafzali/PixelWizardsGymMotion" rel="noopener">GitHub</a>
+          <a href="https://www.npmjs.com/package/pixelwizards-gym-motion" rel="noopener">npm</a>
+        </div>
+        <div>
+          <p class="h">Built with it</p>
+          <a href="https://trainova.eu.cc/">Trainova — strength training tracker</a>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
+<style>
+  .skip { position: absolute; left: -999px; top: 8px; background: var(--accent); color: var(--accent-ink); padding: 8px 14px; border-radius: 8px; z-index: 10; }
+  .skip:focus { left: 8px; }
+  .top { position: sticky; top: 0; z-index: 5; background: #0a1119d9; backdrop-filter: blur(10px); border-bottom: 1px solid #ffffff0d; }
+  .bar { display: flex; align-items: center; justify-content: space-between; min-height: 64px; gap: 16px; }
+  .logo { display: inline-flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -.02em; text-decoration: none; font-size: 18px; white-space: nowrap; }
+  .dot { width: 12px; height: 12px; border-radius: 4px; background: var(--accent); box-shadow: 0 0 18px #c3e20180; }
+  nav { display: flex; gap: 4px; align-items: center; }
+  nav a { text-decoration: none; color: var(--muted); padding: 8px 12px; border-radius: 999px; font-size: 15px; font-weight: 500; }
+  nav a:hover, nav a[aria-current="page"] { color: var(--ink); background: var(--panel); }
+  nav .gh { color: var(--ink); border: 1px solid var(--line); }
+  @media (max-width: 560px) { nav { gap: 0; } nav a:not(.gh) { padding: 8px 7px; font-size: 14px; } nav .gh { display: none; } .logo { font-size: 16px; gap: 8px; } }
+  .foot { border-top: 1px solid var(--line); padding: 48px 0 64px; margin-top: 40px; }
+  .cols { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 32px; }
+  .cols a:not(.logo) { display: block; color: var(--muted); text-decoration: none; padding: 3px 0; }
+  .cols a:not(.logo):hover { color: var(--ink); }
+  .cols .h { font-weight: 700; margin: 0 0 8px; }
+  .cols p.muted { max-width: 40ch; font-size: 14px; }
+  @media (max-width: 720px) { .cols { grid-template-columns: 1fr; } }
+</style>
